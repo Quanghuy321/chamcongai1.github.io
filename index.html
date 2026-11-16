@@ -34,6 +34,7 @@
           <div><dt>Vai trò</dt><dd id="menuProfileRole">—</dd></div>
         </dl>
         <button id="openEmployeeProfileBtn" class="btn outline full" type="button">Mở hồ sơ nhân viên</button>
+        <button id="openEmployeeRequestsBtn" class="btn outline full hidden" type="button">Yêu cầu của tôi</button>
         <button id="changePasswordBtn" class="btn secondary full" type="button">Đổi mật khẩu qua email</button>
       </div>
     </div>
@@ -356,7 +357,7 @@
           </div>
         </section>
         <div class="section-heading history-heading"><div><h2>Lịch sử chấm công</h2><p class="muted">Chọn ngày để xem các bản ghi đã lưu.</p></div>
-          <div class="filter-actions"><label class="date-label">Ngày<input id="filterDate" type="date"></label><button id="sortAttendanceByNameBtn" class="btn outline" type="button" aria-label="Đổi thứ tự tên, hiện A đến Z">Tên A–Z</button><button id="showAllAttendanceBtn" class="btn outline hidden" type="button" aria-pressed="false">Tất cả ngày</button><button id="refreshBtn" class="btn outline" type="button">Làm mới</button><button id="exportBtn" class="btn outline" type="button">Xuất Excel</button><button id="printDailyBtn" class="btn secondary" type="button">In bảng</button><button id="deleteAttendanceDateBtn" class="btn outline hidden" type="button">Xóa chấm công ngày này</button></div>
+          <div class="filter-actions"><label class="date-label">Ngày<input id="filterDate" type="date"></label><button id="sortAttendanceByNameBtn" class="btn outline" type="button" aria-label="Đổi thứ tự tên, hiện A đến Z">Tên A–Z</button><button id="showAllAttendanceBtn" class="btn outline hidden" type="button" aria-pressed="false">Tất cả ngày</button><button id="refreshBtn" class="btn outline" type="button">Làm mới</button><button id="exportBtn" class="btn outline hidden" type="button">Xuất Excel</button><button id="printDailyBtn" class="btn secondary hidden" type="button">In bảng</button><button id="deleteAttendanceDateBtn" class="btn outline hidden" type="button">Xóa chấm công ngày này</button></div>
         </div>
         <div class="table-wrap"><table><thead><tr><th>Nhân viên</th><th>Ngày</th><th>Ca</th><th>Giờ vào</th><th>Trạng thái</th><th>Giờ ra</th><th>Ảnh</th><th>Thao tác</th></tr></thead><tbody id="attendanceRows"><tr><td colspan="8" class="empty">Chưa có dữ liệu.</td></tr></tbody></table></div>
         <p id="historyMessage" class="message" role="status"></p>

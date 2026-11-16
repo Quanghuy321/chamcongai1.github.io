@@ -325,6 +325,19 @@
     image.classList.remove("hidden");
     initials.classList.add("hidden");
   }
+  function showEmployeeRequestsPage() {
+    if (!state.profile || state.profile.role === "admin") return;
+    $("dashboardPage").classList.add("hidden");
+    $("employeeProfilePage").classList.add("hidden");
+    $("employeeRequestsPage").classList.remove("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function returnToDashboard() {
+    $("employeeRequestsPage").classList.add("hidden");
+    $("employeeProfilePage").classList.add("hidden");
+    $("dashboardPage").classList.remove("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
   async function showApp() {
     $("authView").classList.add("hidden");
     $("appView").classList.remove("hidden");
@@ -347,6 +360,7 @@
     $("menuProfileEmail").textContent = state.profile.email || state.user.email || "—";
     $("menuProfileRole").textContent = state.profile.role === "admin" ? "Quản trị viên" : "Nhân viên";
     $("openEmployeeRequestsBtn").classList.toggle("hidden", state.profile.role === "admin");
+    if (window.location.hash === "#requests") showEmployeeRequestsPage();
     renderProfileAvatar();
     const googleLinked = (state.user.providerData || []).some((provider) => provider.providerId === "google.com");
     $("linkGoogleBtn").textContent = googleLinked ? "Google đã liên kết" : "Liên kết Google";
@@ -2581,15 +2595,12 @@
       if (!state.profile || state.profile.role === "admin") return;
       $("accountSettingsMenu").classList.add("hidden");
       $("accountSettingsToggle").setAttribute("aria-expanded", "false");
-      $("dashboardPage").classList.add("hidden");
-      $("employeeProfilePage").classList.add("hidden");
-      $("employeeRequestsPage").classList.remove("hidden");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (window.location.hash !== "#requests") window.location.hash = "requests";
+      showEmployeeRequestsPage();
     });
     $("backFromRequestsBtn").addEventListener("click", () => {
-      $("employeeRequestsPage").classList.add("hidden");
-      $("dashboardPage").classList.remove("hidden");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (window.location.hash === "#requests") window.location.hash = "";
+      returnToDashboard();
     });
     $("backToDashboardBtn").addEventListener("click", () => {
       $("employeeProfilePage").classList.add("hidden");
@@ -2670,6 +2681,13 @@
         setAdminDrawer(false);
         $("accountSettingsMenu").classList.add("hidden");
         $("accountSettingsToggle").setAttribute("aria-expanded", "false");
+      }
+    });
+    window.addEventListener("hashchange", () => {
+      if (window.location.hash === "#requests") {
+        showEmployeeRequestsPage();
+      } else if (!$("employeeRequestsPage").classList.contains("hidden")) {
+        returnToDashboard();
       }
     });
     document.addEventListener("click", (event) => {

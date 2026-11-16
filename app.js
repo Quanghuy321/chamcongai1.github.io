@@ -329,6 +329,7 @@
     $("authView").classList.add("hidden");
     $("appView").classList.remove("hidden");
     $("dashboardPage").classList.remove("hidden");
+    $("employeeRequestsPage").classList.add("hidden");
     $("employeeProfilePage").classList.add("hidden");
     $("userBadge").classList.remove("hidden");
     $("accountSettingsToggle").classList.remove("hidden");
@@ -351,7 +352,6 @@
     $("linkGoogleBtn").textContent = googleLinked ? "Google đã liên kết" : "Liên kết Google";
     $("linkGoogleBtn").disabled = googleLinked;
     $("adminNote").classList.toggle("hidden", state.profile.role !== "admin");
-    $("employeeRequestsPanel").classList.toggle("hidden", state.profile.role === "admin");
     $("deleteAttendanceDateBtn").classList.toggle("hidden", state.profile.role !== "admin");
     $("sortAttendanceByNameBtn").classList.toggle("hidden", state.profile.role !== "admin");
     $("exportBtn").classList.toggle("hidden", state.profile.role !== "admin");
@@ -2581,9 +2581,15 @@
       if (!state.profile || state.profile.role === "admin") return;
       $("accountSettingsMenu").classList.add("hidden");
       $("accountSettingsToggle").setAttribute("aria-expanded", "false");
+      $("dashboardPage").classList.add("hidden");
       $("employeeProfilePage").classList.add("hidden");
+      $("employeeRequestsPage").classList.remove("hidden");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    $("backFromRequestsBtn").addEventListener("click", () => {
+      $("employeeRequestsPage").classList.add("hidden");
       $("dashboardPage").classList.remove("hidden");
-      $("employeeRequestsPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
     $("backToDashboardBtn").addEventListener("click", () => {
       $("employeeProfilePage").classList.add("hidden");

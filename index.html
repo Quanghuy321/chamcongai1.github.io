@@ -335,8 +335,24 @@
       </section>
 
       <section class="panel history-panel">
-        <section id="employeeRequestsPanel" class="employee-requests-panel">
-          <div class="section-heading"><div><h2>Yêu cầu của tôi</h2><p class="muted">Gửi yêu cầu sửa chấm công hoặc đăng ký nghỉ phép.</p></div></div>
+        <div class="section-heading history-heading"><div><h2>Lịch sử chấm công</h2><p class="muted">Chọn ngày để xem các bản ghi đã lưu.</p></div>
+          <div class="filter-actions"><label class="date-label">Ngày<input id="filterDate" type="date"></label><button id="sortAttendanceByNameBtn" class="btn outline" type="button" aria-label="Đổi thứ tự tên, hiện A đến Z">Tên A–Z</button><button id="showAllAttendanceBtn" class="btn outline hidden" type="button" aria-pressed="false">Tất cả ngày</button><button id="refreshBtn" class="btn outline" type="button">Làm mới</button><button id="exportBtn" class="btn outline hidden" type="button">Xuất Excel</button><button id="printDailyBtn" class="btn secondary hidden" type="button">In bảng</button><button id="deleteAttendanceDateBtn" class="btn outline hidden" type="button">Xóa chấm công ngày này</button></div>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Nhân viên</th><th>Ngày</th><th>Ca</th><th>Giờ vào</th><th>Trạng thái</th><th>Giờ ra</th><th>Ảnh</th><th>Thao tác</th></tr></thead><tbody id="attendanceRows"><tr><td colspan="8" class="empty">Chưa có dữ liệu.</td></tr></tbody></table></div>
+        <p id="historyMessage" class="message" role="status"></p>
+      </section>
+      <footer class="footer">WorkTime · Bản thử nghiệm · Hãy bảo vệ dữ liệu sinh trắc học và kiểm thử trước khi dùng thực tế.</footer>
+      </div>
+      <section id="employeeRequestsPage" class="profile-page hidden">
+        <div class="profile-page-heading">
+          <div>
+            <span class="eyebrow">NHÂN VIÊN</span>
+            <h1>Yêu cầu của tôi</h1>
+            <p class="muted">Gửi yêu cầu sửa chấm công hoặc đăng ký nghỉ phép.</p>
+          </div>
+          <button id="backFromRequestsBtn" class="btn outline" type="button">← Quay lại bảng điều khiển</button>
+        </div>
+        <section id="employeeRequestsPanel" class="panel employee-requests-panel">
           <div class="demo-notice" role="status"><strong>Bản xem trước giao diện</strong><span>Yêu cầu chỉ lưu trong phiên trình duyệt này, chưa gửi đến quản lý hoặc máy chủ.</span></div>
           <form id="employeeRequestForm" class="demo-form-grid request-form">
             <label class="settings-field"><span>Loại yêu cầu</span><select id="employeeRequestType" class="admin-filter">
@@ -356,14 +372,7 @@
             </table>
           </div>
         </section>
-        <div class="section-heading history-heading"><div><h2>Lịch sử chấm công</h2><p class="muted">Chọn ngày để xem các bản ghi đã lưu.</p></div>
-          <div class="filter-actions"><label class="date-label">Ngày<input id="filterDate" type="date"></label><button id="sortAttendanceByNameBtn" class="btn outline" type="button" aria-label="Đổi thứ tự tên, hiện A đến Z">Tên A–Z</button><button id="showAllAttendanceBtn" class="btn outline hidden" type="button" aria-pressed="false">Tất cả ngày</button><button id="refreshBtn" class="btn outline" type="button">Làm mới</button><button id="exportBtn" class="btn outline hidden" type="button">Xuất Excel</button><button id="printDailyBtn" class="btn secondary hidden" type="button">In bảng</button><button id="deleteAttendanceDateBtn" class="btn outline hidden" type="button">Xóa chấm công ngày này</button></div>
-        </div>
-        <div class="table-wrap"><table><thead><tr><th>Nhân viên</th><th>Ngày</th><th>Ca</th><th>Giờ vào</th><th>Trạng thái</th><th>Giờ ra</th><th>Ảnh</th><th>Thao tác</th></tr></thead><tbody id="attendanceRows"><tr><td colspan="8" class="empty">Chưa có dữ liệu.</td></tr></tbody></table></div>
-        <p id="historyMessage" class="message" role="status"></p>
       </section>
-      <footer class="footer">WorkTime · Bản thử nghiệm · Hãy bảo vệ dữ liệu sinh trắc học và kiểm thử trước khi dùng thực tế.</footer>
-      </div>
       <section id="employeeProfilePage" class="profile-page hidden">
         <div class="profile-page-heading">
           <div>

@@ -345,6 +345,7 @@
     $("menuProfileEmployeeId").textContent = state.profile.employeeId || "—";
     $("menuProfileEmail").textContent = state.profile.email || state.user.email || "—";
     $("menuProfileRole").textContent = state.profile.role === "admin" ? "Quản trị viên" : "Nhân viên";
+    $("openEmployeeRequestsBtn").classList.toggle("hidden", state.profile.role === "admin");
     renderProfileAvatar();
     const googleLinked = (state.user.providerData || []).some((provider) => provider.providerId === "google.com");
     $("linkGoogleBtn").textContent = googleLinked ? "Google đã liên kết" : "Liên kết Google";
@@ -353,6 +354,8 @@
     $("employeeRequestsPanel").classList.toggle("hidden", state.profile.role === "admin");
     $("deleteAttendanceDateBtn").classList.toggle("hidden", state.profile.role !== "admin");
     $("sortAttendanceByNameBtn").classList.toggle("hidden", state.profile.role !== "admin");
+    $("exportBtn").classList.toggle("hidden", state.profile.role !== "admin");
+    $("printDailyBtn").classList.toggle("hidden", state.profile.role !== "admin");
     $("showAllAttendanceBtn").classList.remove("hidden");
     $("adminPanel").classList.toggle("hidden", state.profile.role !== "admin");
     $("adminDashboardToggle").classList.toggle("hidden", state.profile.role !== "admin");
@@ -1018,6 +1021,10 @@
     }
   }
   function exportPayrollExcel() {
+    if (!state.profile || state.profile.role !== "admin") {
+      toast("Chỉ quản trị viên mới được xuất Excel.", "error");
+      return;
+    }
     if (state.payrollDirty) {
       toast("Hãy lưu các thay đổi và tính lại bảng lương trước khi xuất.", "error");
       return;
@@ -2406,6 +2413,10 @@
     return workbook;
   }
   function downloadAttendanceExcel(records, reportTitle, periodLabel, periodValue, filename) {
+    if (!state.profile || state.profile.role !== "admin") {
+      toast("Chỉ quản trị viên mới được xuất Excel.", "error");
+      return;
+    }
     const workbook = createAttendanceWorkbook(records, reportTitle, periodLabel, periodValue);
     if (!workbook) return;
     try {
@@ -2416,6 +2427,10 @@
     }
   }
   function printAttendanceReport(records, reportTitle, periodLabel, periodValue) {
+    if (!state.profile || state.profile.role !== "admin") {
+      toast("Chỉ quản trị viên mới được in bảng.", "error");
+      return;
+    }
     if (!records.length) {
       toast("Không có dữ liệu để in.", "error");
       return;
@@ -2561,6 +2576,14 @@
       $("dashboardPage").classList.add("hidden");
       $("employeeProfilePage").classList.remove("hidden");
       window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    $("openEmployeeRequestsBtn").addEventListener("click", () => {
+      if (!state.profile || state.profile.role === "admin") return;
+      $("accountSettingsMenu").classList.add("hidden");
+      $("accountSettingsToggle").setAttribute("aria-expanded", "false");
+      $("employeeProfilePage").classList.add("hidden");
+      $("dashboardPage").classList.remove("hidden");
+      $("employeeRequestsPanel").scrollIntoView({ behavior: "smooth", block: "start" });
     });
     $("backToDashboardBtn").addEventListener("click", () => {
       $("employeeProfilePage").classList.add("hidden");

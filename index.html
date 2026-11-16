@@ -147,7 +147,7 @@
         </div>
 
         <div id="adminTabEmployees" class="admin-tab-panel hidden" data-admin-tab="employees">
-          <div class="demo-notice" role="status"><strong>Thông tin hồ sơ xem trước</strong><span>Phòng ban và trạng thái chỉ lưu trong phiên trình duyệt này; chưa thay đổi tài khoản hoặc quyền đăng nhập.</span></div>
+          <div class="demo-notice" role="status"><strong>Dữ liệu đồng bộ với Firebase</strong><span>Phòng ban và tình trạng hồ sơ được lưu trên Firestore. Tình trạng hồ sơ chỉ dùng để quản lý, không khóa tài khoản đăng nhập.</span></div>
           <div class="admin-mini-card department-manager">
             <h3>Quản lý phòng ban</h3>
             <form id="departmentForm" class="department-form">
@@ -181,7 +181,7 @@
         </div>
 
         <div id="adminTabShifts" class="admin-tab-panel hidden" data-admin-tab="shifts">
-          <div class="demo-notice" role="status"><strong>Bản xem trước giao diện</strong><span>Ca làm và phân công chỉ lưu trong phiên trình duyệt này; chưa ảnh hưởng đến chấm công thật.</span></div>
+          <div class="demo-notice" role="status"><strong>Dữ liệu ca làm trên Firebase</strong><span>Ca làm và phân công được lưu trên Firestore. Việc thay đổi ca chưa tự động sửa các bản chấm công đã ghi trước đó.</span></div>
           <div class="admin-mini-card shift-editor">
             <h3>Tạo ca làm việc</h3>
             <form id="shiftForm">
@@ -214,7 +214,7 @@
         </div>
 
         <div id="adminTabRequests" class="admin-tab-panel hidden" data-admin-tab="requests">
-          <div class="demo-notice" role="status"><strong>Bản xem trước giao diện</strong><span>Yêu cầu và thao tác duyệt chỉ tồn tại trong phiên trình duyệt này; chưa lưu lên máy chủ.</span></div>
+          <div class="demo-notice" role="status"><strong>Yêu cầu từ Firebase</strong><span>Danh sách được tải từ Firestore; trạng thái duyệt được lưu lại để nhân viên theo dõi.</span></div>
           <div class="admin-toolbar request-filters">
             <label class="admin-filter-wrap"><span>Loại yêu cầu</span><select id="requestTypeFilter" class="admin-filter">
               <option value="all">Tất cả</option>
@@ -231,7 +231,7 @@
           <div class="table-wrap">
             <table class="request-table">
               <thead><tr><th>Nhân viên</th><th>Loại</th><th>Ngày</th><th>Nội dung</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
-              <tbody id="adminRequestRows"><tr><td colspan="6" class="empty">Chưa có yêu cầu trong phiên này.</td></tr></tbody>
+              <tbody id="adminRequestRows"><tr><td colspan="6" class="empty">Đang tải yêu cầu...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -296,7 +296,7 @@
                 <input id="adminEmailAlertUrl" type="url" placeholder="https://script.google.com/.../exec">
               </label>
               <button id="adminSaveSettingsBtn" class="btn primary" type="button">Lưu cấu hình</button>
-              <p class="hint small-hint">URL này được dùng để gửi cảnh báo khi nhân viên chấm công đi trễ.</p>
+              <p class="hint small-hint">URL được lưu trên Firestore để các thiết bị và nhân viên dùng chung; chỉ quản trị viên được sửa.</p>
             </div>
             <div class="admin-mini-card">
               <h3>Thông tin hệ thống</h3>
@@ -353,7 +353,7 @@
           <button id="backFromRequestsBtn" class="btn outline" type="button">← Quay lại bảng điều khiển</button>
         </div>
         <section id="employeeRequestsPanel" class="panel employee-requests-panel">
-          <div class="demo-notice" role="status"><strong>Bản xem trước giao diện</strong><span>Yêu cầu chỉ lưu trong phiên trình duyệt này, chưa gửi đến quản lý hoặc máy chủ.</span></div>
+          <div class="demo-notice" role="status"><strong>Gửi yêu cầu đến quản trị viên</strong><span>Yêu cầu được lưu trong Firebase và quản trị viên có thể xem, duyệt hoặc từ chối.</span></div>
           <form id="employeeRequestForm" class="demo-form-grid request-form">
             <label class="settings-field"><span>Loại yêu cầu</span><select id="employeeRequestType" class="admin-filter">
               <option value="correction">Sửa chấm công</option>
@@ -363,12 +363,12 @@
             <label id="requestEndDateWrap" class="settings-field hidden"><span>Ngày kết thúc</span><input id="requestEndDate" type="date"></label>
             <label id="requestTimeWrap" class="settings-field"><span>Giờ chấm công đề nghị</span><input id="requestTime" type="time"></label>
             <label class="settings-field request-reason"><span>Lý do</span><input id="requestReason" type="text" maxlength="300" required placeholder="Nhập lý do và thông tin cần lưu ý"></label>
-            <button class="btn secondary request-submit" type="submit">Tạo yêu cầu xem trước</button>
+            <button class="btn secondary request-submit" type="submit">Gửi yêu cầu</button>
           </form>
           <div class="table-wrap request-history-wrap">
             <table class="request-table">
               <thead><tr><th>Loại</th><th>Ngày</th><th>Nội dung</th><th>Trạng thái</th></tr></thead>
-              <tbody id="employeeRequestRows"><tr><td colspan="4" class="empty">Bạn chưa tạo yêu cầu nào trong phiên này.</td></tr></tbody>
+              <tbody id="employeeRequestRows"><tr><td colspan="4" class="empty">Đang tải yêu cầu...</td></tr></tbody>
             </table>
           </div>
         </section>

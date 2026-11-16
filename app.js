@@ -7,13 +7,11 @@
     stream: null, modelsReady: false, faceTimer: null, records: [], members: [], monthlyReport: [], payrollRows: [], payrollDirty: false, toastTimer: null,
     biometricConsentConfirmed: false, registrationInProgress: false,
     attendanceNameSort: "asc",
-    demoDepartments: [],
-    demoEmployeeData: {},
-    demoShifts: [
-      { id: "demo-office", name: "Ca hành chính", start: "08:00", end: "17:00", graceMinutes: 5, days: ["T2", "T3", "T4", "T5", "T6"], employeeUids: [] },
-      { id: "demo-saturday", name: "Ca thứ Bảy", start: "08:00", end: "12:00", graceMinutes: 5, days: ["T7"], employeeUids: [] }
-    ],
-    demoRequests: []
+    departments: [],
+    employeeMetadata: {},
+    shifts: [],
+    requests: [],
+    requestsLoadError: ""
   };
   const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/";
   const MATCH_THRESHOLD = 0.48; // Cần hiệu chỉnh bằng dữ liệu thật; không phải bảo đảm chống giả mạo.
@@ -383,6 +381,7 @@
     $("requestEndDate").value = localDate();
     updateEmployeeRequestForm();
     updateAdminButtonState();
+    await loadEmailAlertSettings();
     if (state.profile.role === "admin") {
       setAdminDrawer(false);
       setAdminTab("overview");
@@ -391,86 +390,162 @@
     await loadBiometricConsent();
     await updateFaceStatus();
     if (state.profile.role === "admin") {
+      await loadAdminReferenceData();
       await loadMembers();
       await loadMonthlyReport();
-      renderDemoShifts();
-      renderDemoRequests();
     } else {
       state.members = [];
       renderAdminMembers([]);
     }
-    renderDemoRequests();
+    await loadRequests();
     await loadAttendance();
   }
-  function renderDemoDepartments() {
+  async function loadAdminReferenceData() {
+    if (!state.user || !state.profile || state.profile.role !== "admin") return;
+    try {
+      const fieldValue = firebase.firestore.FieldValue;
+      const markerRef = state.db.collection("systemSettings").doc("defaultShiftsSeeded");
+      await withTimeout(state.db.runTransaction(async (transaction) => {
+        const marker = await transaction.get(markerRef);
+        if (marker.exists) return;
+        const shifts = state.db.collection("shifts");
+        transaction.set(shifts.doc("default-weekday"), {
+          name: "Ca hành chính", start: "08:00", end: "17:00",
+          graceMinutes: 5, days: ["T2", "T3", "T4", "T5", "T6"], employeeUids: [],
+          createdBy: state.user.uid, createdAt: fieldValue.serverTimestamp(),
+          updatedBy: state.user.uid, updatedAt: fieldValue.serverTimestamp()
+        });
+        transaction.set(shifts.doc("default-saturday"), {
+          name: "Ca thứ Bảy", start: "08:00", end: "12:00",
+          graceMinutes: 5, days: ["T7"], employeeUids: [],
+          createdBy: state.user.uid, createdAt: fieldValue.serverTimestamp(),
+          updatedBy: state.user.uid, updatedAt: fieldValue.serverTimestamp()
+        });
+        transaction.set(markerRef, { seededAt: fieldValue.serverTimestamp() });
+      }), 15000, "Hết thời gian khởi tạo ca làm mặc định.");
+      const [departmentSnapshot, metadataSnapshot, shiftSnapshot] = await Promise.all([
+        withTimeout(state.db.collection("departments").orderBy("name").get(), 15000, "Hết thời gian tải phòng ban."),
+        withTimeout(state.db.collection("employeeMetadata").get(), 15000, "Hết thời gian tải hồ sơ nhân viên."),
+        withTimeout(state.db.collection("shifts").get(), 15000, "Hết thời gian tải ca làm.")
+      ]);
+      state.departments = departmentSnapshot.docs.map((document) => ({
+        id: document.id,
+        name: document.data().name
+      }));
+      state.employeeMetadata = {};
+      metadataSnapshot.docs.forEach((document) => {
+        state.employeeMetadata[document.id] = document.data();
+      });
+      state.shifts = shiftSnapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+      renderDepartments();
+      renderShifts();
+    } catch (error) {
+      toast("Không tải được dữ liệu cấu hình từ Firebase: " + friendlyError(error), "error");
+      console.error("Không tải được phòng ban, hồ sơ nhân viên hoặc ca làm:", error);
+    }
+  }
+  function renderDepartments() {
     const list = $("departmentList");
     const employeeFilter = $("adminMemberDepartmentFilter");
     const reportFilter = $("reportDepartmentFilter");
     if (!list || !employeeFilter || !reportFilter) return;
     const employeeDepartment = employeeFilter.value;
     const reportDepartment = reportFilter.value;
-    const options = state.demoDepartments.map((department) =>
-      `<option value="${esc(department)}">${esc(department)}</option>`
+    const options = state.departments.map((department) =>
+      `<option value="${esc(department.id)}">${esc(department.name)}</option>`
     ).join("");
     employeeFilter.innerHTML = `<option value="all">Tất cả</option>${options}`;
     reportFilter.innerHTML = `<option value="all">Tất cả phòng ban</option>${options}`;
-    if (state.demoDepartments.includes(employeeDepartment)) employeeFilter.value = employeeDepartment;
-    if (state.demoDepartments.includes(reportDepartment)) reportFilter.value = reportDepartment;
-    list.innerHTML = state.demoDepartments.length
-      ? state.demoDepartments.map((department) => {
-        const assignedCount = Object.values(state.demoEmployeeData)
-          .filter((metadata) => metadata.department === department).length;
-        return `<span class="department-chip">${esc(department)}<small>${assignedCount} nhân viên</small>
-          <button type="button" aria-label="Xóa phòng ban ${esc(department)}" data-action="delete-department" data-department="${esc(department)}">×</button></span>`;
+    if (state.departments.some((department) => department.id === employeeDepartment)) employeeFilter.value = employeeDepartment;
+    if (state.departments.some((department) => department.id === reportDepartment)) reportFilter.value = reportDepartment;
+    list.innerHTML = state.departments.length
+      ? state.departments.map((department) => {
+        const assignedCount = Object.values(state.employeeMetadata)
+          .filter((metadata) => metadata.departmentId === department.id).length;
+        return `<span class="department-chip">${esc(department.name)}<small>${assignedCount} nhân viên</small>
+          <button type="button" aria-label="Xóa phòng ban ${esc(department.name)}" data-action="delete-department" data-department="${esc(department.id)}">×</button></span>`;
       }).join("")
       : '<span class="muted">Chưa tạo phòng ban.</span>';
   }
-  function addDemoDepartment(event) {
+  async function addDepartment(event) {
     event.preventDefault();
     if (!state.profile || state.profile.role !== "admin") return;
     const input = $("departmentName");
     const name = input.value.trim();
     if (!name) return;
-    if (state.demoDepartments.some((department) => department.toLocaleLowerCase("vi") === name.toLocaleLowerCase("vi"))) {
-      toast("Phòng ban này đã có trong bản xem trước.", "error");
+    if (state.departments.some((department) => department.name.toLocaleLowerCase("vi") === name.toLocaleLowerCase("vi"))) {
+      toast("Phòng ban này đã tồn tại.", "error");
       return;
     }
-    state.demoDepartments.push(name);
-    input.value = "";
-    renderDemoDepartments();
-    renderAdminMembers(state.members);
-    toast("Đã thêm phòng ban vào bản xem trước trong phiên này; chưa lưu lên máy chủ.", "success");
+    const button = $("departmentForm").querySelector("button[type='submit']");
+    setButtonBusy(button, true, "Đang lưu...");
+    try {
+      const reference = await withTimeout(state.db.collection("departments").add({
+        name,
+        createdBy: state.user.uid,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      }), 15000, "Hết thời gian lưu phòng ban.");
+      state.departments.push({ id: reference.id, name });
+      input.value = "";
+      renderDepartments();
+      renderAdminMembers(state.members);
+      toast("Đã lưu phòng ban lên Firebase.", "success");
+    } catch (error) {
+      toast("Không lưu được phòng ban: " + friendlyError(error), "error");
+      console.error("Không lưu được phòng ban:", error);
+    } finally {
+      setButtonBusy(button, false);
+    }
   }
-  function deleteDemoDepartment(name) {
-    if (!state.profile || state.profile.role !== "admin" || !name) return;
-    const assigned = Object.values(state.demoEmployeeData)
-      .some((metadata) => metadata.department === name);
+  async function deleteDepartment(id) {
+    if (!state.profile || state.profile.role !== "admin" || !id) return;
+    const department = state.departments.find((item) => item.id === id);
+    if (!department) return;
+    const assigned = Object.values(state.employeeMetadata)
+      .some((metadata) => metadata.departmentId === id);
     if (assigned) {
       toast("Không thể xóa phòng ban đang được gán. Hãy chuyển nhân viên sang phòng ban khác trước.", "error");
       return;
     }
-    state.demoDepartments = state.demoDepartments.filter((department) => department !== name);
-    renderDemoDepartments();
-    renderAdminMembers(state.members);
-    renderMonthlyReport(state.monthlyReport, $("adminMonthPicker").value);
-    toast("Đã xóa phòng ban khỏi bản xem trước trong phiên này; chưa lưu lên máy chủ.", "success");
+    try {
+      await withTimeout(state.db.collection("departments").doc(id).delete(), 15000, "Hết thời gian xóa phòng ban.");
+      state.departments = state.departments.filter((item) => item.id !== id);
+      renderDepartments();
+      renderAdminMembers(state.members);
+      renderMonthlyReport(state.monthlyReport, $("adminMonthPicker").value);
+      toast("Đã xóa phòng ban khỏi Firebase.", "success");
+    } catch (error) {
+      toast("Không xóa được phòng ban: " + friendlyError(error), "error");
+      console.error("Không xóa được phòng ban:", error);
+    }
   }
-  function saveDemoEmployeeProfile(button) {
+  async function saveEmployeeMetadata(button) {
     if (!state.profile || state.profile.role !== "admin") return;
     const row = button.closest("tr[data-member-uid]");
     if (!row) return;
     const uid = row.dataset.memberUid;
-    const department = row.querySelector("[data-member-field='department']").value;
-    const status = row.querySelector("[data-member-field='status']").value;
-    if (department && !state.demoDepartments.includes(department)) {
+    const departmentId = row.querySelector("[data-member-field='department']").value;
+    const employmentStatus = row.querySelector("[data-member-field='status']").value;
+    if (departmentId && !state.departments.some((department) => department.id === departmentId)) {
       toast("Phòng ban không còn tồn tại. Hãy chọn lại trước khi lưu.", "error");
       return;
     }
-    state.demoEmployeeData[uid] = { department, status };
-    renderDemoDepartments();
-    renderAdminMembers(state.members);
-    renderMonthlyReport(state.monthlyReport, $("adminMonthPicker").value);
-    toast("Đã lưu hồ sơ xem trước trong phiên này; trạng thái chưa ảnh hưởng quyền đăng nhập.", "success");
+    setButtonBusy(button, true, "Đang lưu...");
+    try {
+      const metadata = { departmentId, employmentStatus, updatedBy: state.user.uid,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+      await withTimeout(state.db.collection("employeeMetadata").doc(uid).set(metadata), 15000, "Hết thời gian lưu hồ sơ nhân viên.");
+      state.employeeMetadata[uid] = { departmentId, employmentStatus };
+      renderDepartments();
+      renderAdminMembers(state.members);
+      renderMonthlyReport(state.monthlyReport, $("adminMonthPicker").value);
+      toast("Đã lưu hồ sơ nhân viên lên Firebase.", "success");
+    } catch (error) {
+      toast("Không lưu được hồ sơ nhân viên: " + friendlyError(error), "error");
+      console.error("Không lưu được hồ sơ nhân viên:", error);
+    } finally {
+      setButtonBusy(button, false);
+    }
   }
   function renderAdminMembers(rows) {
     const tbody = $("adminMembersTableBody");
@@ -483,9 +558,9 @@
       const matchRole = roleFilter === "all" || member.role === roleFilter;
       const haystack = `${member.name} ${member.employeeId} ${member.email}`.toLowerCase();
       const matchSearch = !search || haystack.includes(search);
-      const metadata = state.demoEmployeeData[member.uid] || { department: "", status: "active" };
-      const matchDepartment = departmentFilter === "all" || metadata.department === departmentFilter;
-      const matchStatus = statusFilter === "all" || metadata.status === statusFilter;
+      const metadata = state.employeeMetadata[member.uid] || { departmentId: "", employmentStatus: "active" };
+      const matchDepartment = departmentFilter === "all" || metadata.departmentId === departmentFilter;
+      const matchStatus = statusFilter === "all" || metadata.employmentStatus === statusFilter;
       return matchRole && matchSearch && matchDepartment && matchStatus;
     });
     if (!filtered.length) {
@@ -494,13 +569,13 @@
     }
     tbody.innerHTML = filtered.map((member) => {
       const isSelf = state.user && member.uid === state.user.uid;
-      const metadata = state.demoEmployeeData[member.uid] || { department: "", status: "active" };
+      const metadata = state.employeeMetadata[member.uid] || { departmentId: "", employmentStatus: "active" };
       const roleLabel = member.role === "admin" ? "Quản trị viên" : "Nhân viên";
       const roleButton = isSelf
         ? '<span class="member-self-tag">Bạn</span>'
         : `<button type="button" class="btn mini ${member.role === "admin" ? "secondary" : "primary"}" data-action="toggle-role" data-uid="${esc(member.uid)}" data-role="${member.role}">${member.role === "admin" ? "Gỡ quyền admin" : "Cấp quyền admin"}</button>`;
-      const departmentOptions = `<option value="">Chưa phân công</option>${state.demoDepartments.map((department) =>
-        `<option value="${esc(department)}" ${metadata.department === department ? "selected" : ""}>${esc(department)}</option>`
+      const departmentOptions = `<option value="">Chưa phân công</option>${state.departments.map((department) =>
+        `<option value="${esc(department.id)}" ${metadata.departmentId === department.id ? "selected" : ""}>${esc(department.name)}</option>`
       ).join("")}`;
       const faceButton = member.hasFace
         ? `<button type="button" class="btn mini outline" data-action="delete-face-profile" data-uid="${esc(member.uid)}" data-name="${esc(member.name || member.employeeId || "nhân viên")}">Hủy khuôn mặt</button>`
@@ -516,7 +591,7 @@
           <option value="inactive" ${metadata.status === "inactive" ? "selected" : ""}>Tạm ngưng</option>
         </select></td>
         <td>${esc(member.faceStatus || "Chưa đăng ký")}</td>
-        <td class="member-actions"><button type="button" class="btn mini secondary" data-action="save-member-preview" data-uid="${esc(member.uid)}">Lưu hồ sơ</button>${roleButton}${faceButton}</td>
+        <td class="member-actions"><button type="button" class="btn mini secondary" data-action="save-member-metadata" data-uid="${esc(member.uid)}">Lưu hồ sơ</button>${roleButton}${faceButton}</td>
       </tr>`;
     }).join("");
   }
@@ -575,7 +650,7 @@
       panel.classList.toggle("active", panel.dataset.adminTab === tabName);
     });
   }
-  function renderDemoShifts() {
+  function renderShifts() {
     const tbody = $("shiftRows");
     const employeeSelect = $("shiftEmployeeSelect");
     if (!tbody || !employeeSelect) return;
@@ -585,24 +660,24 @@
       `<option value="${esc(member.uid)}">${esc(member.name || member.employeeId || member.email)}</option>`
     ).join("")}`;
     if (employees.some((member) => member.uid === selectedUid)) employeeSelect.value = selectedUid;
-    tbody.innerHTML = state.demoShifts.length
-      ? state.demoShifts.map((shift) => {
-        const assigned = shift.employeeUids.map((uid) => {
+    tbody.innerHTML = state.shifts.length
+      ? state.shifts.map((shift) => {
+        const assigned = (Array.isArray(shift.employeeUids) ? shift.employeeUids : []).map((uid) => {
           const member = employees.find((item) => item.uid === uid);
           return member ? member.name : "";
         }).filter(Boolean);
         return `<tr>
           <td><strong>${esc(shift.name)}</strong></td>
           <td>${esc(shift.start)}–${esc(shift.end)}</td>
-          <td>${esc(shift.days.join(", "))}</td>
+          <td>${esc((Array.isArray(shift.days) ? shift.days : []).join(", "))}</td>
           <td>${shift.graceMinutes} phút</td>
           <td>${assigned.length ? esc(assigned.join(", ")) : "Chưa gán"}</td>
-          <td><button class="btn mini outline" type="button" data-action="delete-demo-shift" data-id="${esc(shift.id)}">Xóa</button></td>
+          <td><button class="btn mini outline" type="button" data-action="delete-shift" data-id="${esc(shift.id)}">Xóa</button></td>
         </tr>`;
       }).join("")
-      : '<tr><td colspan="6" class="empty">Chưa có ca làm trong bản xem trước.</td></tr>';
+      : '<tr><td colspan="6" class="empty">Chưa có ca làm.</td></tr>';
   }
-  function submitDemoShift(event) {
+  async function submitShift(event) {
     event.preventDefault();
     if (!state.profile || state.profile.role !== "admin") return;
     const name = $("shiftName").value.trim();
@@ -617,24 +692,46 @@
       return;
     }
     const employeeUid = $("shiftEmployeeSelect").value;
-    state.demoShifts.push({
-      id: `demo-${Date.now()}`,
-      name,
-      start,
-      end,
-      graceMinutes,
-      days,
-      employeeUids: employeeUid ? [employeeUid] : []
-    });
-    $("shiftForm").reset();
-    $("shiftStart").value = "08:00";
-    $("shiftEnd").value = "17:00";
-    $("shiftGrace").value = "5";
-    document.querySelectorAll("input[name='shiftDay']").forEach((input) => {
-      input.checked = ["T2", "T3", "T4", "T5", "T6"].includes(input.value);
-    });
-    renderDemoShifts();
-    toast("Đã thêm ca vào bản xem trước trong phiên này; chưa lưu lên máy chủ.", "success");
+    const button = $("shiftForm").querySelector("button[type='submit']");
+    setButtonBusy(button, true, "Đang lưu...");
+    try {
+      const shift = {
+        name, start, end, graceMinutes, days,
+        employeeUids: employeeUid ? [employeeUid] : [],
+        createdBy: state.user.uid,
+        updatedBy: state.user.uid,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      const reference = await withTimeout(state.db.collection("shifts").add(shift), 15000, "Hết thời gian lưu ca làm.");
+      state.shifts.push({ ...shift, id: reference.id });
+      $("shiftForm").reset();
+      $("shiftStart").value = "08:00";
+      $("shiftEnd").value = "17:00";
+      $("shiftGrace").value = "5";
+      document.querySelectorAll("input[name='shiftDay']").forEach((input) => {
+        input.checked = ["T2", "T3", "T4", "T5", "T6"].includes(input.value);
+      });
+      renderShifts();
+      toast("Đã lưu ca làm lên Firebase.", "success");
+    } catch (error) {
+      toast("Không lưu được ca làm: " + friendlyError(error), "error");
+      console.error("Không lưu được ca làm:", error);
+    } finally {
+      setButtonBusy(button, false);
+    }
+  }
+  async function deleteShift(id) {
+    if (!state.profile || state.profile.role !== "admin" || !id) return;
+    try {
+      await withTimeout(state.db.collection("shifts").doc(id).delete(), 15000, "Hết thời gian xóa ca làm.");
+      state.shifts = state.shifts.filter((shift) => shift.id !== id);
+      renderShifts();
+      toast("Đã xóa ca làm khỏi Firebase.", "success");
+    } catch (error) {
+      toast("Không xóa được ca làm: " + friendlyError(error), "error");
+      console.error("Không xóa được ca làm:", error);
+    }
   }
   function requestTypeLabel(type) {
     return type === "leave" ? "Nghỉ phép" : "Sửa chấm công";
@@ -652,21 +749,46 @@
     return records.filter((record) =>
       (selectedEmployee === "all" || record.employeeUid === selectedEmployee) &&
       (selectedDepartment === "all" ||
-        (state.demoEmployeeData[record.employeeUid] || {}).department === selectedDepartment) &&
+        (state.employeeMetadata[record.employeeUid] || {}).departmentId === selectedDepartment) &&
       (selectedShift === "all" || record.shift === selectedShift)
     );
   }
-  function renderDemoRequests() {
+  async function loadRequests() {
+    if (!state.user || !state.profile) return;
+    try {
+      let query = state.db.collection("employeeRequests");
+      if (state.profile.role !== "admin") {
+        query = query.where("employeeUid", "==", state.user.uid);
+      }
+      const snapshot = await withTimeout(query.get(), 15000, "Hết thời gian tải yêu cầu.");
+      state.requests = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }))
+        .sort((a, b) => {
+          const aTime = a.createdAt && typeof a.createdAt.toMillis === "function" ? a.createdAt.toMillis() : 0;
+          const bTime = b.createdAt && typeof b.createdAt.toMillis === "function" ? b.createdAt.toMillis() : 0;
+          return bTime - aTime;
+        });
+      state.requestsLoadError = "";
+    } catch (error) {
+      state.requests = [];
+      state.requestsLoadError = friendlyError(error);
+      toast("Không tải được yêu cầu từ Firebase: " + state.requestsLoadError, "error");
+      console.error("Không tải được yêu cầu:", error);
+    }
+    renderRequests();
+  }
+  function renderRequests() {
     const adminRows = $("adminRequestRows");
     const employeeRows = $("employeeRequestRows");
     const typeFilter = $("requestTypeFilter") ? $("requestTypeFilter").value : "all";
     const statusFilter = $("requestStatusFilter") ? $("requestStatusFilter").value : "all";
-    const visibleRequests = state.demoRequests.filter((request) =>
+    const visibleRequests = state.requests.filter((request) =>
       (typeFilter === "all" || request.type === typeFilter) &&
       (statusFilter === "all" || request.status === statusFilter)
-    ).slice().reverse();
+    );
     if (adminRows) {
-      adminRows.innerHTML = visibleRequests.length
+      adminRows.innerHTML = state.requestsLoadError
+        ? `<tr><td colspan="6" class="empty">Không tải được dữ liệu: ${esc(state.requestsLoadError)}</td></tr>`
+        : visibleRequests.length
         ? visibleRequests.map((request) => {
           const dates = request.type === "leave" && request.endDate !== request.startDate
             ? `${request.startDate} – ${request.endDate}` : request.startDate;
@@ -683,11 +805,13 @@
             <td class="member-actions">${action}</td>
           </tr>`;
         }).join("")
-        : '<tr><td colspan="6" class="empty">Không có yêu cầu phù hợp trong phiên này.</td></tr>';
+        : '<tr><td colspan="6" class="empty">Không có yêu cầu phù hợp.</td></tr>';
     }
     if (employeeRows) {
-      const mine = state.demoRequests.filter((request) => state.user && request.employeeUid === state.user.uid).slice().reverse();
-      employeeRows.innerHTML = mine.length
+      const mine = state.requests.filter((request) => state.user && request.employeeUid === state.user.uid);
+      employeeRows.innerHTML = state.requestsLoadError
+        ? `<tr><td colspan="4" class="empty">Không tải được dữ liệu: ${esc(state.requestsLoadError)}</td></tr>`
+        : mine.length
         ? mine.map((request) => {
           const dates = request.type === "leave" && request.endDate !== request.startDate
             ? `${request.startDate} – ${request.endDate}` : request.startDate;
@@ -698,7 +822,7 @@
             <td><span class="request-status ${esc(request.status)}">${requestStatusLabel(request.status)}</span></td>
           </tr>`;
         }).join("")
-        : '<tr><td colspan="4" class="empty">Bạn chưa tạo yêu cầu nào trong phiên này.</td></tr>';
+        : '<tr><td colspan="4" class="empty">Bạn chưa gửi yêu cầu nào.</td></tr>';
     }
   }
   function updateEmployeeRequestForm() {
@@ -709,7 +833,7 @@
     $("requestTime").required = false;
     $("requestStartDateLabel").textContent = isLeave ? "Ngày bắt đầu nghỉ" : "Ngày cần sửa";
   }
-  function submitDemoRequest(event) {
+  async function submitEmployeeRequest(event) {
     event.preventDefault();
     if (!state.user || !state.profile || state.profile.role === "admin") return;
     const type = $("employeeRequestType").value;
@@ -725,31 +849,49 @@
     const details = type === "correction"
       ? `Giờ đề nghị: ${requestedTime}. ${reason}`
       : reason;
-    state.demoRequests.push({
-      id: `request-${Date.now()}`,
-      employeeUid: state.user.uid,
-      employeeName: state.profile.name || state.user.email || "Nhân viên",
-      type,
-      startDate,
-      endDate,
-      details,
-      status: "pending"
-    });
-    $("employeeRequestForm").reset();
-    $("requestStartDate").value = localDate();
-    $("requestEndDate").value = localDate();
-    updateEmployeeRequestForm();
-    renderDemoRequests();
-    toast("Đã tạo yêu cầu xem trước trong phiên này; chưa gửi đến quản lý hoặc máy chủ.", "success");
+    const button = $("employeeRequestForm").querySelector("button[type='submit']");
+    setButtonBusy(button, true, "Đang gửi...");
+    try {
+      await withTimeout(state.db.collection("employeeRequests").add({
+        employeeUid: state.user.uid,
+        employeeName: state.profile.name || state.user.email || "Nhân viên",
+        type,
+        startDate,
+        endDate,
+        details,
+        status: "pending",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      }), 15000, "Hết thời gian gửi yêu cầu.");
+      $("employeeRequestForm").reset();
+      $("requestStartDate").value = localDate();
+      $("requestEndDate").value = localDate();
+      updateEmployeeRequestForm();
+      await loadRequests();
+      toast("Đã gửi yêu cầu lên Firebase.", "success");
+    } catch (error) {
+      toast("Không gửi được yêu cầu: " + friendlyError(error), "error");
+      console.error("Không gửi được yêu cầu:", error);
+    } finally {
+      setButtonBusy(button, false);
+    }
   }
-  function reviewDemoRequest(id, status) {
+  async function reviewEmployeeRequest(id, status) {
     if (!state.profile || state.profile.role !== "admin" ||
         !["approved", "rejected"].includes(status)) return;
-    const request = state.demoRequests.find((item) => item.id === id);
+    const request = state.requests.find((item) => item.id === id);
     if (!request || request.status !== "pending") return;
-    request.status = status;
-    renderDemoRequests();
-    toast(`Đã đổi trạng thái xem trước thành “${requestStatusLabel(status)}”; chưa lưu lên máy chủ.`, "success");
+    try {
+      await withTimeout(state.db.collection("employeeRequests").doc(id).update({
+        status,
+        reviewedBy: state.user.uid,
+        reviewedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }), 15000, "Hết thời gian cập nhật trạng thái yêu cầu.");
+      await loadRequests();
+      toast(`Đã cập nhật trạng thái yêu cầu: ${requestStatusLabel(status)}.`, "success");
+    } catch (error) {
+      toast("Không cập nhật được yêu cầu: " + friendlyError(error), "error");
+      console.error("Không cập nhật được yêu cầu:", error);
+    }
   }
   function renderMonthlyReport(records, monthValue) {
     const chart = $("monthlyChart");
@@ -1093,12 +1235,36 @@
   function renderAdminSettings() {
     const input = $("adminEmailAlertUrl");
     if (!input) return;
-    const storedValue = localStorage.getItem("worktime_email_alert_url") || window.WORKTIME_EMAIL_ALERT_URL || "";
+    const storedValue = window.WORKTIME_EMAIL_ALERT_URL || "";
     input.value = storedValue;
-    window.WORKTIME_EMAIL_ALERT_URL = storedValue;
     const projectId = $("settingsProjectId");
     if (projectId && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId) {
       projectId.textContent = window.FIREBASE_CONFIG.projectId;
+    }
+  }
+  async function loadEmailAlertSettings() {
+    if (!state.user || !state.db) return;
+    try {
+      const ref = state.db.collection("systemSettings").doc("emailAlert");
+      const snap = await withTimeout(ref.get(), 15000, "Hết thời gian tải cấu hình email từ Firestore.");
+      if (snap.exists) {
+        window.WORKTIME_EMAIL_ALERT_URL = String((snap.data() || {}).url || "").trim();
+        return;
+      }
+      // Import a URL saved on this browser once, then use Firestore for all devices.
+      if (state.profile && state.profile.role === "admin") {
+        const legacyUrl = (localStorage.getItem("worktime_email_alert_url") || window.WORKTIME_EMAIL_ALERT_URL || "").trim();
+        if (legacyUrl) {
+          await ref.set({ url: legacyUrl, updatedBy: state.user.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+          window.WORKTIME_EMAIL_ALERT_URL = legacyUrl;
+          localStorage.removeItem("worktime_email_alert_url");
+        }
+      }
+    } catch (error) {
+      console.error("Không tải được cấu hình email từ Firestore:", error);
+      if (!window.WORKTIME_EMAIL_ALERT_URL) {
+        window.WORKTIME_EMAIL_ALERT_URL = localStorage.getItem("worktime_email_alert_url") || "";
+      }
     }
   }
   async function loadBiometricConsent() {
@@ -1160,18 +1326,21 @@
     if (state.biometricConsentConfirmed && $("biometricConsentCheckbox").checked) return;
     throw new Error("Hãy đọc và xác nhận thông báo dữ liệu khuôn mặt trước khi tiếp tục.");
   }
-  function saveAdminSettings() {
+  async function saveAdminSettings() {
     const input = $("adminEmailAlertUrl");
     if (!input) return;
     const url = input.value.trim();
-    if (url) {
+    try {
+      await withTimeout(state.db.collection("systemSettings").doc("emailAlert").set({
+        url,
+        updatedBy: state.user.uid,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }), 15000, "Hết thời gian lưu cấu hình email lên Firestore.");
       window.WORKTIME_EMAIL_ALERT_URL = url;
-      localStorage.setItem("worktime_email_alert_url", url);
-      toast("Đã lưu URL cảnh báo email.", "success");
-    } else {
-      window.WORKTIME_EMAIL_ALERT_URL = "";
       localStorage.removeItem("worktime_email_alert_url");
-      toast("Đã xóa URL cảnh báo email.", "success");
+      toast(url ? "Đã đồng bộ URL cảnh báo email lên Firestore." : "Đã xóa URL cảnh báo email khỏi Firestore.", "success");
+    } catch (error) {
+      toast("Không lưu được cấu hình email lên Firestore: " + friendlyError(error), "error");
     }
   }
   function populateAdminEmployeeSelect(rows) {
@@ -1216,11 +1385,11 @@
         };
       });
       state.members = rows;
-      renderDemoDepartments();
+      renderDepartments();
       renderAdminMembers(rows);
       populateAdminEmployeeSelect(rows);
       populateReportEmployeeFilter(rows);
-      renderDemoShifts();
+      renderShifts();
       const adminCount = rows.filter((member) => member.role === "admin").length;
       $("adminMemberCount").textContent = `${rows.length} thành viên · ${adminCount} admin`;
       const today = $("filterDate").value || localDate();
@@ -1911,7 +2080,7 @@
     });
   }
   function getEmailAlertEndpoint() {
-    return (window.WORKTIME_EMAIL_ALERT_URL || localStorage.getItem("worktime_email_alert_url") || "").trim();
+    return (window.WORKTIME_EMAIL_ALERT_URL || "").trim();
   }
   async function requestLateAttendanceEmail(recordId, action = "notify") {
     const endpoint = getEmailAlertEndpoint();
@@ -2647,10 +2816,10 @@
     $("adminMemberRoleFilter").addEventListener("change", () => renderAdminMembers(state.members));
     $("adminMemberDepartmentFilter").addEventListener("change", () => renderAdminMembers(state.members));
     $("adminMemberStatusFilter").addEventListener("change", () => renderAdminMembers(state.members));
-    $("departmentForm").addEventListener("submit", addDemoDepartment);
-    $("departmentList").addEventListener("click", (event) => {
+    $("departmentForm").addEventListener("submit", addDepartment);
+    $("departmentList").addEventListener("click", async (event) => {
       const button = event.target.closest("button[data-action='delete-department']");
-      if (button) deleteDemoDepartment(button.dataset.department);
+      if (button) await deleteDepartment(button.dataset.department);
     });
     $("adminEmployeeDate").value = localDate();
     $("adminEmployeeSelect").addEventListener("change", loadAdminMemberHistory);
@@ -2703,9 +2872,9 @@
       });
     });
     $("adminMembersTableBody").addEventListener("click", async (event) => {
-      const saveButton = event.target.closest("button[data-action='save-member-preview']");
+      const saveButton = event.target.closest("button[data-action='save-member-metadata']");
       if (saveButton) {
-        saveDemoEmployeeProfile(saveButton);
+        await saveEmployeeMetadata(saveButton);
         return;
       }
       const button = event.target.closest("button[data-action='toggle-role']");
@@ -2725,21 +2894,19 @@
         );
       }
     });
-    $("shiftForm").addEventListener("submit", submitDemoShift);
-    $("shiftRows").addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-action='delete-demo-shift']");
+    $("shiftForm").addEventListener("submit", submitShift);
+    $("shiftRows").addEventListener("click", async (event) => {
+      const button = event.target.closest("button[data-action='delete-shift']");
       if (!button || !state.profile || state.profile.role !== "admin") return;
-      state.demoShifts = state.demoShifts.filter((shift) => shift.id !== button.dataset.id);
-      renderDemoShifts();
-      toast("Đã xóa ca khỏi bản xem trước trong phiên này; chưa lưu lên máy chủ.", "success");
+      await deleteShift(button.dataset.id);
     });
-    $("employeeRequestForm").addEventListener("submit", submitDemoRequest);
+    $("employeeRequestForm").addEventListener("submit", submitEmployeeRequest);
     $("employeeRequestType").addEventListener("change", updateEmployeeRequestForm);
-    $("requestTypeFilter").addEventListener("change", renderDemoRequests);
-    $("requestStatusFilter").addEventListener("change", renderDemoRequests);
-    $("adminRequestRows").addEventListener("click", (event) => {
+    $("requestTypeFilter").addEventListener("change", renderRequests);
+    $("requestStatusFilter").addEventListener("change", renderRequests);
+    $("adminRequestRows").addEventListener("click", async (event) => {
       const button = event.target.closest("button[data-action='review-request']");
-      if (button) reviewDemoRequest(button.dataset.id, button.dataset.status);
+      if (button) await reviewEmployeeRequest(button.dataset.id, button.dataset.status);
     });
     $("reportEmployeeFilter").addEventListener("change", () => {
       renderMonthlyReport(state.monthlyReport, $("adminMonthPicker").value);

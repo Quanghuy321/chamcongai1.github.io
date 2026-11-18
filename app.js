@@ -928,6 +928,10 @@
       toast(isFaceDeletion ? "Vui lòng nhập lý do gửi yêu cầu." : "Hãy kiểm tra ngày, giờ đề nghị và lý do trước khi gửi.", "error");
       return;
     }
+    if (type === "correction" && new Date(`${startDate}T${requestedTime}:00`).getTime() > Date.now()) {
+      toast("Chưa tới ngày, giờ đề nghị nên chưa thể gửi yêu cầu sửa.", "error");
+      return;
+    }
     const details = reason;
     const button = $("employeeRequestForm").querySelector("button[type='submit']");
     setButtonBusy(button, true, "Đang gửi...");
@@ -962,6 +966,9 @@
       if (type === "correction") {
         requestData.correctionTarget = correctionTarget;
         requestData.requestedTime = requestedTime;
+        requestData.requestedDateTime = firebase.firestore.Timestamp.fromDate(
+          new Date(`${startDate}T${requestedTime}:00`)
+        );
       }
       await withTimeout(state.db.collection("employeeRequests").add(requestData), 15000, "Hết thời gian gửi yêu cầu.");
       $("employeeRequestForm").reset();
@@ -982,6 +989,13 @@
         !["approved", "rejected"].includes(status)) return;
     const request = state.requests.find((item) => item.id === id);
     if (!request || request.status !== "pending") return;
+    if (request.type === "correction" && status === "approved") {
+      const requestedDateTime = new Date(`${request.startDate}T${request.requestedTime}:00`);
+      if (!request.requestedDateTime || Number.isNaN(requestedDateTime.getTime()) || requestedDateTime.getTime() > Date.now()) {
+        toast("Chưa tới ngày, giờ đề nghị nên yêu cầu này chưa thể được duyệt.", "error");
+        return;
+      }
+    }
     if (request.type === "faceDeletion" && status === "approved" &&
         !window.confirm(`Duyệt yêu cầu và xóa hồ sơ khuôn mặt của ${request.employeeName}? Nhân viên cần đăng ký lại để chấm công bằng nhận diện.`)) return;
     if (request.type === "correction" && status === "approved" && request.correctionTarget && request.requestedTime &&

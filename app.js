@@ -916,6 +916,13 @@
       toast("Bạn đã có yêu cầu hủy khuôn mặt đang chờ admin duyệt.", "error");
       return;
     }
+    if (type === "correction" && state.requests.some((request) =>
+      request.type === "correction" && request.status === "pending" &&
+      request.employeeUid === state.user.uid && request.startDate === startDate &&
+      request.correctionTarget === correctionTarget)) {
+      toast("Bạn đã có yêu cầu sửa mục này trong ngày đang chờ admin duyệt.", "error");
+      return;
+    }
     if ((!isFaceDeletion && (!startDate || !endDate || endDate < startDate)) || !reason ||
         (type === "correction" && (!requestedTime || !["checkIn", "checkOut"].includes(correctionTarget)))) {
       toast(isFaceDeletion ? "Vui lòng nhập lý do gửi yêu cầu." : "Hãy kiểm tra ngày, giờ đề nghị và lý do trước khi gửi.", "error");
@@ -935,8 +942,8 @@
           15000,
           "Hết thời gian kiểm tra chấm công của ngày được chọn."
         );
-        if (!attendance.docs.some((record) => String(record.data()[correctionTarget] || "").trim())) {
-          toast(`Ngày này chưa có ${correctionTarget === "checkIn" ? "giờ vào" : "giờ ra"} nên chưa thể gửi yêu cầu sửa mục đó.`, "error");
+        if (!attendance.docs.some((record) => String(record.data().checkIn || "").trim())) {
+          toast("Ngày này chưa có giờ vào nên chưa thể gửi yêu cầu sửa chấm công.", "error");
           return;
         }
       }
@@ -995,15 +1002,28 @@
           15000,
           "Hết thời gian kiểm tra bản ghi chấm công cần sửa."
         );
-        const attendanceDoc = attendance.docs.find((doc) =>
-          String(doc.data()[request.correctionTarget] || "").trim());
+        const attendanceDoc = attendance.docs.find((doc) => String(doc.data().checkIn || "").trim());
         if (!attendanceDoc) {
-          throw new Error(`Không tìm thấy bản ghi có ${request.correctionTarget === "checkIn" ? "giờ vào" : "giờ ra"} để sửa. Yêu cầu chưa được duyệt.`);
+          throw new Error("Không tìm thấy bản ghi có giờ vào trong ngày này. Yêu cầu chưa được duyệt.");
         }
         const correctedDate = new Date(`${request.startDate}T${request.requestedTime}:00`);
         if (Number.isNaN(correctedDate.getTime())) throw new Error("Ngày hoặc giờ đề nghị không hợp lệ.");
         const record = attendanceDoc.data();
         const target = request.correctionTarget;
+        const pairedTarget = target === "checkOut" ? "checkIn" : "checkOut";
+        if (record[pairedTarget]) {
+          const pairedServerTime = record[`${pairedTarget}ServerTimestamp`];
+          const pairedMillis = pairedServerTime && typeof pairedServerTime.toMillis === "function"
+            ? pairedServerTime.toMillis()
+            : Number(record[`${pairedTarget}Timestamp`]) || new Date(record[pairedTarget]).getTime();
+          if (Number.isFinite(pairedMillis) &&
+              ((target === "checkOut" && correctedDate.getTime() <= pairedMillis) ||
+               (target === "checkIn" && correctedDate.getTime() >= pairedMillis))) {
+            throw new Error(target === "checkOut"
+              ? "Giờ ra đề nghị phải sau giờ vào đã ghi nhận."
+              : "Giờ vào đề nghị phải trước giờ ra đã ghi nhận.");
+          }
+        }
         const correction = {
           [target]: `${request.startDate}T${request.requestedTime}:00`,
           [`${target}Timestamp`]: correctedDate.getTime(),

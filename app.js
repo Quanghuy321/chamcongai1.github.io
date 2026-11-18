@@ -1044,13 +1044,14 @@
           [target]: `${request.startDate}T${request.requestedTime}:00`,
           [`${target}Timestamp`]: correctedDate.getTime(),
           [`${target}ServerTimestamp`]: firebase.firestore.Timestamp.fromDate(correctedDate),
-          [`${target}Original`]: record[`${target}Original`] || record[target],
           [`${target}OriginalTimestamp`]: record[`${target}OriginalTimestamp`] ?? record[`${target}Timestamp`] ?? null,
           [`${target}OriginalServerTimestamp`]: record[`${target}OriginalServerTimestamp`] || record[`${target}ServerTimestamp`] || null,
           [`${target}CorrectedAt`]: firebase.firestore.FieldValue.serverTimestamp(),
           [`${target}CorrectedBy`]: state.user.uid,
           updatedAt: localDateTime()
         };
+        const originalValue = record[`${target}Original`] ?? record[target];
+        if (originalValue !== undefined) correction[`${target}Original`] = originalValue;
         if (target === "checkIn") correction.status = statusForCheckIn(correctedDate, shiftInfo(correctedDate));
         batch.update(attendanceDoc.ref, correction);
       }

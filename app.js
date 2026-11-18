@@ -985,6 +985,7 @@
     }
   }
   async function reviewEmployeeRequest(id, status, button) {
+    setMessage("adminRequestMessage", "");
     if (!state.profile || state.profile.role !== "admin" ||
         !["approved", "rejected"].includes(status)) return;
     const request = state.requests.find((item) => item.id === id);
@@ -1062,6 +1063,9 @@
         batch.delete(state.db.collection("faceProfiles").doc(request.employeeUid));
       }
       await withTimeout(batch.commit(), 15000, "Hết thời gian cập nhật trạng thái yêu cầu.");
+      request.status = status;
+      renderRequests();
+      if (button) setButtonBusy(button, false);
       await loadRequests();
       if (request.type === "faceDeletion" && status === "approved") {
         await loadMembers();
@@ -1071,11 +1075,17 @@
       if (request.type === "correction" && status === "approved") {
         await loadAttendance();
         await loadMonthlyReport();
-        toast(`Đã duyệt và cập nhật ${request.correctionTarget === "checkIn" ? "giờ vào" : "giờ ra"} của ${request.employeeName}.`, "success");
+        const message = `Đã duyệt và cập nhật ${request.correctionTarget === "checkIn" ? "giờ vào" : "giờ ra"} của ${request.employeeName}.`;
+        setMessage("adminRequestMessage", message, "success");
+        toast(message, "success");
         return;
       }
-      toast(`Đã cập nhật trạng thái yêu cầu: ${requestStatusLabel(status)}.`, "success");
+      const message = `Đã cập nhật trạng thái yêu cầu: ${requestStatusLabel(status)}.`;
+      setMessage("adminRequestMessage", message, "success");
+      toast(message, "success");
     } catch (error) {
+      const code = error && error.code ? ` (${error.code})` : "";
+      setMessage("adminRequestMessage", "Không cập nhật được yêu cầu" + code + ": " + friendlyError(error), "error");
       toast("Không cập nhật được yêu cầu: " + friendlyError(error), "error");
       console.error("Không cập nhật được yêu cầu:", error);
     } finally {

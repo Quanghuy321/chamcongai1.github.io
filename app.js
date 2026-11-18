@@ -984,7 +984,7 @@
       setButtonBusy(button, false);
     }
   }
-  async function reviewEmployeeRequest(id, status) {
+  async function reviewEmployeeRequest(id, status, button) {
     if (!state.profile || state.profile.role !== "admin" ||
         !["approved", "rejected"].includes(status)) return;
     const request = state.requests.find((item) => item.id === id);
@@ -1000,6 +1000,7 @@
         !window.confirm(`Duyệt yêu cầu và xóa hồ sơ khuôn mặt của ${request.employeeName}? Nhân viên cần đăng ký lại để chấm công bằng nhận diện.`)) return;
     if (request.type === "correction" && status === "approved" && request.correctionTarget && request.requestedTime &&
         !window.confirm(`Duyệt sửa ${request.correctionTarget === "checkIn" ? "giờ vào" : "giờ ra"} ngày ${request.startDate} thành ${request.requestedTime} cho ${request.employeeName}?`)) return;
+    if (button) setButtonBusy(button, true, "Đang xử lý...");
     try {
       const batch = state.db.batch();
       if (request.type === "correction" && status === "approved") {
@@ -1077,6 +1078,8 @@
     } catch (error) {
       toast("Không cập nhật được yêu cầu: " + friendlyError(error), "error");
       console.error("Không cập nhật được yêu cầu:", error);
+    } finally {
+      if (button) setButtonBusy(button, false);
     }
   }
   function renderMonthlyReport(records, monthValue) {
@@ -3068,7 +3071,7 @@
     $("requestStatusFilter").addEventListener("change", renderRequests);
     $("adminRequestRows").addEventListener("click", async (event) => {
       const button = event.target.closest("button[data-action='review-request']");
-      if (button) await reviewEmployeeRequest(button.dataset.id, button.dataset.status);
+      if (button) await reviewEmployeeRequest(button.dataset.id, button.dataset.status, button);
     });
     $("reportEmployeeFilter").addEventListener("change", () => {
       renderMonthlyReport(state.monthlyReport, $("adminMonthPicker").value);

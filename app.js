@@ -577,9 +577,6 @@
       const departmentOptions = `<option value="">Chưa phân công</option>${state.departments.map((department) =>
         `<option value="${esc(department.id)}" ${metadata.departmentId === department.id ? "selected" : ""}>${esc(department.name)}</option>`
       ).join("")}`;
-      const faceButton = member.hasFace
-        ? `<button type="button" class="btn mini outline" data-action="delete-face-profile" data-uid="${esc(member.uid)}" data-name="${esc(member.name || member.employeeId || "nhân viên")}">Hủy khuôn mặt</button>`
-        : "";
       return `<tr data-member-uid="${esc(member.uid)}">
         <td><strong>${esc(member.name || "Không rõ")}</strong></td>
         <td>${esc(member.employeeId || "—")}</td>
@@ -591,7 +588,7 @@
           <option value="inactive" ${metadata.status === "inactive" ? "selected" : ""}>Tạm ngưng</option>
         </select></td>
         <td>${esc(member.faceStatus || "Chưa đăng ký")}</td>
-        <td class="member-actions"><button type="button" class="btn mini secondary" data-action="save-member-metadata" data-uid="${esc(member.uid)}">Lưu hồ sơ</button>${roleButton}${faceButton}</td>
+        <td class="member-actions"><button type="button" class="btn mini secondary" data-action="save-member-metadata" data-uid="${esc(member.uid)}">Lưu hồ sơ</button>${roleButton}</td>
       </tr>`;
     }).join("");
   }
@@ -779,7 +776,7 @@
     }
   }
   function requestTypeLabel(type) {
-    return type === "leave" ? "Nghỉ phép" : "Sửa chấm công";
+    return type === "leave" ? "Nghỉ phép" : type === "faceDeletion" ? "Hủy đăng ký khuôn mặt" : "Sửa chấm công";
   }
   function requestStatusLabel(status) {
     return status === "approved" ? "Đã duyệt" : status === "rejected" ? "Từ chối" : "Chờ duyệt";
@@ -835,17 +832,19 @@
         ? `<tr><td colspan="6" class="empty">Không tải được dữ liệu: ${esc(state.requestsLoadError)}</td></tr>`
         : visibleRequests.length
         ? visibleRequests.map((request) => {
-          const dates = request.type === "leave" && request.endDate !== request.startDate
+          const dates = request.type === "faceDeletion" ? "—" : request.type === "leave" && request.endDate !== request.startDate
             ? `${request.startDate} – ${request.endDate}` : request.startDate;
           const action = request.status === "pending"
             ? `<button class="btn mini primary" type="button" data-action="review-request" data-id="${esc(request.id)}" data-status="approved">Duyệt</button>
                <button class="btn mini outline" type="button" data-action="review-request" data-id="${esc(request.id)}" data-status="rejected">Từ chối</button>`
             : "—";
+          const correction = request.type === "correction" && request.correctionTarget && request.requestedTime
+            ? `${request.correctionTarget === "checkIn" ? "Giờ vào" : "Giờ ra"} đề nghị: ${request.requestedTime}. ` : "";
           return `<tr>
             <td>${esc(request.employeeName)}</td>
             <td>${requestTypeLabel(request.type)}</td>
             <td>${esc(dates)}</td>
-            <td>${esc(request.details)}</td>
+            <td>${esc(correction + (request.details || ""))}</td>
             <td><span class="request-status ${esc(request.status)}">${requestStatusLabel(request.status)}</span></td>
             <td class="member-actions">${action}</td>
           </tr>`;
@@ -858,12 +857,14 @@
         ? `<tr><td colspan="4" class="empty">Không tải được dữ liệu: ${esc(state.requestsLoadError)}</td></tr>`
         : mine.length
         ? mine.map((request) => {
-          const dates = request.type === "leave" && request.endDate !== request.startDate
+          const dates = request.type === "faceDeletion" ? "—" : request.type === "leave" && request.endDate !== request.startDate
             ? `${request.startDate} – ${request.endDate}` : request.startDate;
+          const correction = request.type === "correction" && request.correctionTarget && request.requestedTime
+            ? `${request.correctionTarget === "checkIn" ? "Giờ vào" : "Giờ ra"} đề nghị: ${request.requestedTime}. ` : "";
           return `<tr>
             <td>${requestTypeLabel(request.type)}</td>
             <td>${esc(dates)}</td>
-            <td>${esc(request.details)}</td>
+            <td>${esc(correction + (request.details || ""))}</td>
             <td><span class="request-status ${esc(request.status)}">${requestStatusLabel(request.status)}</span></td>
           </tr>`;
         }).join("")
@@ -871,42 +872,75 @@
     }
   }
   function updateEmployeeRequestForm() {
-    const isLeave = $("employeeRequestType").value === "leave";
-    $("requestEndDateWrap").classList.toggle("hidden", !isLeave);
-    $("requestEndDate").required = isLeave;
-    $("requestTimeWrap").classList.toggle("hidden", isLeave);
-    $("requestTime").required = false;
+    const type = $("employeeRequestType").value;
+    const isLeave = type === "leave";
+    const isCorrection = type === "correction";
+    const isFaceDeletion = type === "faceDeletion";
+    $("requestDateWrap").classList.toggle("hidden", isFaceDeletion);
+    $("requestEndDateWrap").classList.toggle("hidden", !isLeave || isFaceDeletion);
+    $("correctionTargetWrap").classList.toggle("hidden", !isCorrection);
+    $("requestStartDate").required = !isFaceDeletion;
+    $("requestEndDate").required = isLeave && !isFaceDeletion;
+    $("requestTimeWrap").classList.toggle("hidden", !isCorrection);
+    $("requestTime").required = isCorrection;
     $("requestStartDateLabel").textContent = isLeave ? "Ngày bắt đầu nghỉ" : "Ngày cần sửa";
   }
   async function submitEmployeeRequest(event) {
     event.preventDefault();
     if (!state.user || !state.profile || state.profile.role === "admin") return;
     const type = $("employeeRequestType").value;
-    const startDate = $("requestStartDate").value;
+    const isFaceDeletion = type === "faceDeletion";
+    const startDate = isFaceDeletion ? "" : $("requestStartDate").value;
     const endDate = type === "leave" ? $("requestEndDate").value : startDate;
     const reason = $("requestReason").value.trim();
     const requestedTime = $("requestTime").value;
-    if (!startDate || !endDate || endDate < startDate || !reason ||
-        (type === "correction" && !requestedTime)) {
-      toast("Hãy kiểm tra ngày, giờ đề nghị và lý do trước khi gửi.", "error");
+    const correctionTarget = $("correctionTarget").value;
+    if (isFaceDeletion && state.requests.some((request) =>
+      request.type === "faceDeletion" && request.status === "pending" && request.employeeUid === state.user.uid)) {
+      toast("Bạn đã có yêu cầu hủy khuôn mặt đang chờ admin duyệt.", "error");
       return;
     }
-    const details = type === "correction"
-      ? `Giờ đề nghị: ${requestedTime}. ${reason}`
-      : reason;
+    if ((!isFaceDeletion && (!startDate || !endDate || endDate < startDate)) || !reason ||
+        (type === "correction" && (!requestedTime || !["checkIn", "checkOut"].includes(correctionTarget)))) {
+      toast(isFaceDeletion ? "Vui lòng nhập lý do gửi yêu cầu." : "Hãy kiểm tra ngày, giờ đề nghị và lý do trước khi gửi.", "error");
+      return;
+    }
+    const details = reason;
     const button = $("employeeRequestForm").querySelector("button[type='submit']");
     setButtonBusy(button, true, "Đang gửi...");
     try {
-      await withTimeout(state.db.collection("employeeRequests").add({
+      if (type === "correction") {
+        const attendance = await withTimeout(
+          state.db.collection("attendance")
+            .where("employeeUid", "==", state.user.uid)
+            .where("workDate", "==", startDate)
+            .limit(1)
+            .get(),
+          15000,
+          "Hết thời gian kiểm tra chấm công của ngày được chọn."
+        );
+        if (!attendance.docs.some((record) => String(record.data()[correctionTarget] || "").trim())) {
+          toast(`Ngày này chưa có ${correctionTarget === "checkIn" ? "giờ vào" : "giờ ra"} nên chưa thể gửi yêu cầu sửa mục đó.`, "error");
+          return;
+        }
+      }
+      const requestData = {
         employeeUid: state.user.uid,
         employeeName: state.profile.name || state.user.email || "Nhân viên",
         type,
-        startDate,
-        endDate,
         details,
         status: "pending",
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      }), 15000, "Hết thời gian gửi yêu cầu.");
+      };
+      if (!isFaceDeletion) {
+        requestData.startDate = startDate;
+        requestData.endDate = endDate;
+      }
+      if (type === "correction") {
+        requestData.correctionTarget = correctionTarget;
+        requestData.requestedTime = requestedTime;
+      }
+      await withTimeout(state.db.collection("employeeRequests").add(requestData), 15000, "Hết thời gian gửi yêu cầu.");
       $("employeeRequestForm").reset();
       $("requestStartDate").value = localDate();
       $("requestEndDate").value = localDate();
@@ -925,13 +959,70 @@
         !["approved", "rejected"].includes(status)) return;
     const request = state.requests.find((item) => item.id === id);
     if (!request || request.status !== "pending") return;
+    if (request.type === "faceDeletion" && status === "approved" &&
+        !window.confirm(`Duyệt yêu cầu và xóa hồ sơ khuôn mặt của ${request.employeeName}? Nhân viên cần đăng ký lại để chấm công bằng nhận diện.`)) return;
+    if (request.type === "correction" && status === "approved" && request.correctionTarget && request.requestedTime &&
+        !window.confirm(`Duyệt sửa ${request.correctionTarget === "checkIn" ? "giờ vào" : "giờ ra"} ngày ${request.startDate} thành ${request.requestedTime} cho ${request.employeeName}?`)) return;
     try {
-      await withTimeout(state.db.collection("employeeRequests").doc(id).update({
+      const batch = state.db.batch();
+      if (request.type === "correction" && status === "approved") {
+        if (!["checkIn", "checkOut"].includes(request.correctionTarget) ||
+            !/^([01]\d|2[0-3]):[0-5]\d$/.test(request.requestedTime || "")) {
+          throw new Error("Yêu cầu sửa cũ chưa ghi rõ sửa giờ vào hay giờ ra. Hãy từ chối yêu cầu này và đề nghị nhân viên gửi lại.");
+        }
+        const attendance = await withTimeout(
+          state.db.collection("attendance")
+            .where("employeeUid", "==", request.employeeUid)
+            .where("workDate", "==", request.startDate)
+            .limit(1)
+            .get(),
+          15000,
+          "Hết thời gian kiểm tra bản ghi chấm công cần sửa."
+        );
+        const attendanceDoc = attendance.docs.find((doc) =>
+          String(doc.data()[request.correctionTarget] || "").trim());
+        if (!attendanceDoc) {
+          throw new Error(`Không tìm thấy bản ghi có ${request.correctionTarget === "checkIn" ? "giờ vào" : "giờ ra"} để sửa. Yêu cầu chưa được duyệt.`);
+        }
+        const correctedDate = new Date(`${request.startDate}T${request.requestedTime}:00`);
+        if (Number.isNaN(correctedDate.getTime())) throw new Error("Ngày hoặc giờ đề nghị không hợp lệ.");
+        const record = attendanceDoc.data();
+        const target = request.correctionTarget;
+        const correction = {
+          [target]: `${request.startDate}T${request.requestedTime}:00`,
+          [`${target}Timestamp`]: correctedDate.getTime(),
+          [`${target}ServerTimestamp`]: firebase.firestore.Timestamp.fromDate(correctedDate),
+          [`${target}Original`]: record[`${target}Original`] || record[target],
+          [`${target}OriginalTimestamp`]: record[`${target}OriginalTimestamp`] ?? record[`${target}Timestamp`] ?? null,
+          [`${target}OriginalServerTimestamp`]: record[`${target}OriginalServerTimestamp`] || record[`${target}ServerTimestamp`] || null,
+          [`${target}CorrectedAt`]: firebase.firestore.FieldValue.serverTimestamp(),
+          [`${target}CorrectedBy`]: state.user.uid,
+          updatedAt: localDateTime()
+        };
+        if (target === "checkIn") correction.status = statusForCheckIn(correctedDate, shiftInfo(correctedDate));
+        batch.update(attendanceDoc.ref, correction);
+      }
+      batch.update(state.db.collection("employeeRequests").doc(id), {
         status,
         reviewedBy: state.user.uid,
         reviewedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }), 15000, "Hết thời gian cập nhật trạng thái yêu cầu.");
+      });
+      if (request.type === "faceDeletion" && status === "approved") {
+        batch.delete(state.db.collection("faceProfiles").doc(request.employeeUid));
+      }
+      await withTimeout(batch.commit(), 15000, "Hết thời gian cập nhật trạng thái yêu cầu.");
       await loadRequests();
+      if (request.type === "faceDeletion" && status === "approved") {
+        await loadMembers();
+        toast(`Đã duyệt và xóa hồ sơ khuôn mặt của ${request.employeeName}.`, "success");
+        return;
+      }
+      if (request.type === "correction" && status === "approved") {
+        await loadAttendance();
+        await loadMonthlyReport();
+        toast(`Đã duyệt và cập nhật ${request.correctionTarget === "checkIn" ? "giờ vào" : "giờ ra"} của ${request.employeeName}.`, "success");
+        return;
+      }
       toast(`Đã cập nhật trạng thái yêu cầu: ${requestStatusLabel(status)}.`, "success");
     } catch (error) {
       toast("Không cập nhật được yêu cầu: " + friendlyError(error), "error");
@@ -1585,43 +1676,9 @@
       $("profileFaceStatus").textContent = !profile
         ? "Chưa đăng ký"
         : (Array.isArray(profile.maskedDescriptor) ? "Đã đăng ký (có khẩu trang)" : "Đã đăng ký");
-      $("deleteFaceProfileBtn").classList.toggle(
-        "hidden",
-        !profile || !state.profile || state.profile.role !== "admin"
-      );
     } catch (error) {
       $("profileFaceStatus").textContent = "Không kiểm tra được";
-      $("deleteFaceProfileBtn").classList.add("hidden");
       console.error("Không kiểm tra được hồ sơ khuôn mặt:", error);
-    }
-  }
-  async function deleteFaceProfile() {
-    if (!state.user || !state.profile || state.profile.role !== "admin") {
-      toast("Chỉ quản trị viên mới được hủy đăng ký khuôn mặt.", "error");
-      return;
-    }
-    await deleteFaceProfileForUid(state.user.uid, $("deleteFaceProfileBtn"), state.profile.name || "tài khoản hiện tại");
-  }
-  async function deleteFaceProfileForUid(uid, button, displayName) {
-    if (!state.profile || state.profile.role !== "admin" || !uid) {
-      toast("Chỉ quản trị viên mới được hủy đăng ký khuôn mặt.", "error");
-      return;
-    }
-    if (!window.confirm(`Hủy đăng ký và xóa hồ sơ khuôn mặt của ${displayName}? Nhân viên sẽ cần đăng ký lại để chấm công bằng nhận diện.`)) return;
-    setButtonBusy(button, true, "Đang xóa...");
-    try {
-      await withTimeout(
-        state.db.collection("faceProfiles").doc(uid).delete(),
-        15000,
-        "Hết thời gian xóa hồ sơ khuôn mặt khỏi Firestore."
-      );
-      if (uid === state.user.uid) await updateFaceStatus();
-      await loadMembers();
-      toast(`Đã hủy đăng ký khuôn mặt của ${displayName}.`, "success");
-    } catch (error) {
-      toast("Không xóa được hồ sơ khuôn mặt: " + friendlyError(error), "error");
-    } finally {
-      if (button) setButtonBusy(button, false);
     }
   }
   async function registerAccount(event) {
@@ -2842,7 +2899,6 @@
     $("startCameraBtn").addEventListener("click", startCamera);
     $("registerFaceBtn").addEventListener("click", registerFace);
     $("registerMaskedFaceBtn").addEventListener("click", registerMaskedFace);
-    $("deleteFaceProfileBtn").addEventListener("click", deleteFaceProfile);
     $("attendanceBtn").addEventListener("click", writeAttendance);
     $("biometricConsentCheckbox").addEventListener("change", saveBiometricConsent);
     $("refreshBtn").addEventListener("click", loadAttendance);
@@ -2942,14 +2998,6 @@
         const nextRole = role === "admin" ? "employee" : "admin";
         await updateMemberRole(uid, nextRole);
         return;
-      }
-      const deleteFaceButton = event.target.closest("button[data-action='delete-face-profile']");
-      if (deleteFaceButton) {
-        await deleteFaceProfileForUid(
-          deleteFaceButton.dataset.uid,
-          deleteFaceButton,
-          deleteFaceButton.dataset.name || "nhân viên"
-        );
       }
     });
     $("shiftForm").addEventListener("submit", submitShift);

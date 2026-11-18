@@ -218,6 +218,7 @@
               <option value="all">Tất cả</option>
               <option value="correction">Sửa chấm công</option>
               <option value="leave">Nghỉ phép</option>
+              <option value="faceDeletion">Hủy đăng ký khuôn mặt</option>
             </select></label>
             <label class="admin-filter-wrap"><span>Trạng thái</span><select id="requestStatusFilter" class="admin-filter">
               <option value="all">Tất cả</option>
@@ -346,7 +347,7 @@
           <div>
             <span class="eyebrow">NHÂN VIÊN</span>
             <h1>Yêu cầu của tôi</h1>
-            <p class="muted">Gửi yêu cầu sửa chấm công hoặc đăng ký nghỉ phép.</p>
+            <p class="muted">Gửi yêu cầu sửa chấm công, nghỉ phép hoặc hủy đăng ký khuôn mặt để admin duyệt.</p>
           </div>
           <button id="backFromRequestsBtn" class="btn outline" type="button">← Quay lại bảng điều khiển</button>
         </div>
@@ -355,10 +356,12 @@
             <label class="settings-field"><span>Loại yêu cầu</span><select id="employeeRequestType" class="admin-filter">
               <option value="correction">Sửa chấm công</option>
               <option value="leave">Nghỉ phép</option>
+              <option value="faceDeletion">Hủy đăng ký khuôn mặt</option>
             </select></label>
-            <label class="settings-field"><span id="requestStartDateLabel">Ngày cần sửa</span><input id="requestStartDate" type="date" required></label>
+            <label id="requestDateWrap" class="settings-field"><span id="requestStartDateLabel">Ngày cần sửa</span><input id="requestStartDate" type="date" required></label>
             <label id="requestEndDateWrap" class="settings-field hidden"><span>Ngày kết thúc</span><input id="requestEndDate" type="date"></label>
-            <label id="requestTimeWrap" class="settings-field"><span>Giờ chấm công đề nghị</span><input id="requestTime" type="time"></label>
+            <label id="correctionTargetWrap" class="settings-field"><span>Cần sửa</span><select id="correctionTarget" class="admin-filter"><option value="checkIn">Giờ vào</option><option value="checkOut">Giờ ra</option></select></label>
+            <label id="requestTimeWrap" class="settings-field"><span>Giờ đúng cần cập nhật</span><input id="requestTime" type="time"></label>
             <label class="settings-field request-reason"><span>Lý do</span><input id="requestReason" type="text" maxlength="300" required placeholder="Nhập lý do và thông tin cần lưu ý"></label>
             <button class="btn secondary request-submit" type="submit">Gửi yêu cầu</button>
           </form>
@@ -395,7 +398,6 @@
             <button id="linkGoogleBtn" class="btn outline" type="button">Liên kết Google</button>
           </div>
           <p class="hint">Ảnh được thu nhỏ và lưu trong hồ sơ WorkTime.</p>
-          <button id="deleteFaceProfileBtn" class="btn outline hidden" type="button">Hủy đăng ký khuôn mặt</button>
           <div id="adminNote" class="admin-note hidden"><strong>Chế độ quản trị</strong><p>Bạn có thể xem bản ghi của các nhân viên trong bảng lịch sử. Việc cấp quyền admin phải thực hiện an toàn trong Firebase, không qua trang đăng ký.</p></div>
         </section>
       </section>

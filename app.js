@@ -4,6 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const state = {
     auth: null, db: null, legacyDb: null, user: null, profile: null,
+    firebaseInitError: "",
     stream: null, modelsReady: false, faceTimer: null, records: [], members: [], monthlyReport: [], payrollRows: [], payrollDirty: false, toastTimer: null,
     biometricConsentConfirmed: false, registrationInProgress: false,
     attendanceNameSort: "asc",
@@ -118,6 +119,12 @@
       c.projectId && c.projectId !== "YOUR_PROJECT_ID" &&
       c.appId && !c.appId.startsWith("PASTE_");
   }
+  function ensureFirebaseAuth() {
+    if (!state.auth && configIsReady() && window.firebase) initFirebase();
+    if (state.auth) return true;
+    setMessage("authMessage", state.firebaseInitError || "Firebase chưa khởi tạo được. Hãy kiểm tra kết nối mạng rồi tải lại trang.", "error");
+    return false;
+  }
   function employeeCodeDocId(code) {
     return encodeURIComponent(code);
   }
@@ -221,17 +228,23 @@
   }
   function initFirebase() {
     if (!configIsReady()) {
-      setMessage("authMessage", "Bạn chưa điền firebase-config.js. Hãy làm theo README.txt trước khi đăng nhập.", "error");
+      state.firebaseInitError = "Không tải được cấu hình Firebase (firebase-config.js). Tải lại trang hoặc liên hệ quản trị viên.";
+      setMessage("authMessage", state.firebaseInitError, "error");
       return false;
     }
     if (!window.firebase) {
-      setMessage("authMessage", "Không tải được Firebase SDK. Kiểm tra kết nối Internet rồi tải lại trang.", "error");
+      state.firebaseInitError = "Không tải được Firebase SDK. Kiểm tra kết nối Internet hoặc DNS trên điện thoại rồi tải lại trang.";
+      setMessage("authMessage", state.firebaseInitError, "error");
       return false;
     }
     try {
       const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(window.FIREBASE_CONFIG);
       state.auth = app.auth();
       state.db = app.firestore();
+      if (!state.auth || !state.db || typeof state.auth.signInWithEmailAndPassword !== "function") {
+        throw new Error("Firebase Auth SDK chưa tải đủ. Kiểm tra kết nối và tải lại trang.");
+      }
+      state.firebaseInitError = "";
       state.legacyDb = window.FIREBASE_CONFIG.databaseURL ? app.database() : null;
       state.auth.onAuthStateChanged(async (user) => {
         if (!user) {
@@ -299,7 +312,10 @@
       });
       return true;
     } catch (error) {
-      setMessage("authMessage", "Lỗi khởi tạo Firebase: " + error.message, "error");
+      state.auth = null;
+      state.db = null;
+      state.firebaseInitError = "Lỗi khởi tạo Firebase: " + error.message;
+      setMessage("authMessage", state.firebaseInitError, "error");
       return false;
     }
   }
@@ -1683,6 +1699,7 @@
   }
   async function registerAccount(event) {
     event.preventDefault();
+    if (!ensureFirebaseAuth()) return;
     const name = $("registerName").value.trim();
     const employeeId = $("registerEmployeeId").value.trim().toUpperCase();
     const email = $("registerEmail").value.trim();
@@ -1732,6 +1749,7 @@
   }
   async function login(event) {
     event.preventDefault();
+    if (!ensureFirebaseAuth()) return;
     setButtonBusy($("loginForm").querySelector("button[type=submit]"), true, "Đang đăng nhập...");
     try {
       await state.auth.signInWithEmailAndPassword($("loginEmail").value.trim(), $("loginPassword").value);
@@ -1743,6 +1761,7 @@
     }
   }
   async function loginWithGoogle() {
+    if (!ensureFirebaseAuth()) return;
     const button = $("googleLoginBtn");
     setButtonBusy(button, true, "Đang đăng nhập Google...");
     try {
@@ -1866,6 +1885,7 @@
       /[^A-Za-z0-9]/.test(password);
   }
   async function forgotPassword() {
+    if (!ensureFirebaseAuth()) return;
     const email = $("loginEmail").value.trim();
     if (!email) {
       setMessage("authMessage", "Nhập email tài khoản trước để nhận thư đặt lại mật khẩu.", "error");
@@ -1889,6 +1909,7 @@
     }
   }
   async function changePasswordByEmail() {
+    if (!ensureFirebaseAuth()) return;
     const email = state.user && state.user.email;
     if (!email) {
       toast("Tài khoản hiện tại không có email để gửi hướng dẫn đặt lại mật khẩu.", "error");

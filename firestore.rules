@@ -164,7 +164,7 @@ service cloud.firestore {
         || (signedIn()
           && resource.data.employeeUids is list
           && (request.auth.uid in resource.data.employeeUids
-            || resource.data.employeeUids.size() == 0));
+            || resource.data.employeeUids == []));
       allow create: if isAdmin()
         && request.resource.data.keys().hasOnly([
           "name", "start", "end", "graceMinutes", "days", "employeeUids",

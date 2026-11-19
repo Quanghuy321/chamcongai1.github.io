@@ -33,17 +33,51 @@
   function localDateTime(date = new Date()) {
     return `${localDate(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
   }
-  function shiftInfo(now = new Date()) {
+  function shiftInfo(now = new Date(), employeeUid = state.user && state.user.uid) {
     const workDate = localDate(now);
-    const start = new Date(now); start.setHours(8, 0, 0, 0);
-    const dayOfWeek = now.getDay();
-    const isWorkday = dayOfWeek !== 0;
+    const dayCode = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][now.getDay()];
+    const matchingShifts = state.shifts.filter((shift) =>
+      Array.isArray(shift.days) && shift.days.includes(dayCode)
+    );
+    const assignedShift = matchingShifts.find((shift) =>
+      employeeUid && Array.isArray(shift.employeeUids) && shift.employeeUids.includes(employeeUid)
+    );
+    const defaultShift = matchingShifts.find((shift) =>
+      !Array.isArray(shift.employeeUids) || shift.employeeUids.length === 0
+    );
+    let selectedShift = assignedShift || defaultShift || null;
+
+    // Keep the documented standard schedule when no shift has been configured.
+    if (!selectedShift && state.shifts.length === 0 && now.getDay() !== 0) {
+      selectedShift = {
+        name: "Ca hành chính",
+        start: "08:00",
+        end: now.getDay() === 6 ? "12:00" : "17:00",
+        graceMinutes: 5
+      };
+    }
+
+    const parseTime = (value, fallback) => {
+      const match = /^(\d{2}):(\d{2})$/.exec(String(value || ""));
+      if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return fallback;
+      return Number(match[1]) * 60 + Number(match[2]);
+    };
+    const startMinutes = parseTime(selectedShift && selectedShift.start, 8 * 60);
+    const endMinutes = parseTime(selectedShift && selectedShift.end, now.getDay() === 6 ? 12 * 60 : 17 * 60);
+    const start = new Date(now);
+    start.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
     const end = new Date(now);
-    end.setHours(dayOfWeek === 6 ? 12 : 17, 0, 0, 0);
-    return { key: `${workDate}_day`, workDate, shift: "Ca hành chính", start, end, isWorkday };
+    end.setHours(Math.floor(endMinutes / 60), endMinutes % 60, 0, 0);
+    return {
+      key: `${workDate}_day`, workDate,
+      shift: selectedShift ? String(selectedShift.name || "Ca làm") : "Không có ca làm",
+      start, end, isWorkday: Boolean(selectedShift),
+      graceMinutes: Number.isInteger(selectedShift && selectedShift.graceMinutes)
+        ? selectedShift.graceMinutes : 5
+    };
   }
   function statusForCheckIn(now, shift) {
-    const lateAt = new Date(shift.start.getTime() + 5 * 60000);
+    const lateAt = new Date(shift.start.getTime() + shift.graceMinutes * 60000);
     return now > lateAt ? "Đi trễ" : "Đúng giờ";
   }
   function displayTime(value) {
@@ -411,6 +445,7 @@
       await loadMonthlyReport();
     } else {
       state.members = [];
+      await loadEmployeeShifts();
       renderAdminMembers([]);
     }
     await loadRequests();
@@ -458,6 +493,25 @@
     } catch (error) {
       toast("Không tải được dữ liệu cấu hình từ Firebase: " + friendlyError(error), "error");
       console.error("Không tải được phòng ban, hồ sơ nhân viên hoặc ca làm:", error);
+    }
+  }
+  async function loadEmployeeShifts() {
+    if (!state.user || !state.db) return;
+    try {
+      const shifts = state.db.collection("shifts");
+      const [assignedSnapshot, defaultSnapshot] = await withTimeout(Promise.all([
+        shifts.where("employeeUids", "array-contains", state.user.uid).get(),
+        shifts.where("employeeUids", "==", []).get()
+      ]), 15000, "Hết thời gian tải ca làm được phân công.");
+      const byId = new Map();
+      [...assignedSnapshot.docs, ...defaultSnapshot.docs].forEach((document) => {
+        byId.set(document.id, { id: document.id, ...document.data() });
+      });
+      state.shifts = Array.from(byId.values());
+    } catch (error) {
+      state.shifts = [];
+      toast("Không tải được ca làm được phân công: " + friendlyError(error), "error");
+      console.error("Không tải được ca làm của nhân viên:", error);
     }
   }
   function renderDepartments() {
@@ -600,8 +654,8 @@
         <td><span class="tag ${member.role === "admin" ? "admin-role" : "employee-role"}">${esc(roleLabel)}</span></td>
         <td><select class="admin-filter member-edit-select" data-member-field="department" aria-label="Phòng ban của ${esc(member.name)}">${departmentOptions}</select></td>
         <td><select class="admin-filter member-edit-select" data-member-field="status" aria-label="Tình trạng của ${esc(member.name)}">
-          <option value="active" ${metadata.status === "active" ? "selected" : ""}>Đang làm</option>
-          <option value="inactive" ${metadata.status === "inactive" ? "selected" : ""}>Tạm ngưng</option>
+          <option value="active" ${metadata.employmentStatus === "active" ? "selected" : ""}>Đang làm</option>
+          <option value="inactive" ${metadata.employmentStatus === "inactive" ? "selected" : ""}>Tạm ngưng</option>
         </select></td>
         <td>${esc(member.faceStatus || "Chưa đăng ký")}</td>
         <td class="member-actions"><button type="button" class="btn mini secondary" data-action="save-member-metadata" data-uid="${esc(member.uid)}">Lưu hồ sơ</button>${roleButton}</td>
@@ -2318,7 +2372,10 @@
       }
       if ((!previous || !previous.checkIn) &&
           (!shift.isWorkday || now < shift.start || now >= shift.end)) {
-        throw new Error("Lịch làm việc: thứ Hai–thứ Sáu 08:00–17:00, thứ Bảy 08:00–12:00; Chủ nhật nghỉ.");
+        if (!shift.isWorkday) {
+          throw new Error("Hôm nay bạn chưa được phân công ca làm. Hãy liên hệ quản trị viên để kiểm tra lịch.");
+        }
+        throw new Error(`Chỉ có thể chấm công ca ${shift.shift} trong khoảng ${displayTime(shift.start)}–${displayTime(shift.end)}.`);
       }
       setMessage("cameraMessage", "Đang chụp ảnh chấm công...");
       const photoDataUrl = await withTimeout(

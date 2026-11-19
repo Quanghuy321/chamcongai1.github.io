@@ -12,6 +12,17 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
     }
 
+    function hasRecordedAttendance(uid, workDate) {
+      let currentRecord = /databases/$(database)/documents/attendance/$(uid + "_" + workDate + "_day");
+      let migratedRecord = /databases/$(database)/documents/attendance/$(uid + "_" + workDate);
+      return (exists(currentRecord)
+          && get(currentRecord).data.checkIn is string
+          && get(currentRecord).data.checkIn.size() > 0)
+        || (exists(migratedRecord)
+          && get(migratedRecord).data.checkIn is string
+          && get(migratedRecord).data.checkIn.size() > 0);
+    }
+
     function validPhoto(field) {
       return !(field in request.resource.data)
         || (request.resource.data[field] is string
@@ -149,7 +160,11 @@ service cloud.firestore {
     }
 
     match /shifts/{shiftId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin()
+        || (signedIn()
+          && resource.data.employeeUids is list
+          && (request.auth.uid in resource.data.employeeUids
+            || resource.data.employeeUids.size() == 0));
       allow create: if isAdmin()
         && request.resource.data.keys().hasOnly([
           "name", "start", "end", "graceMinutes", "days", "employeeUids",
@@ -204,14 +219,25 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly([
           "employeeUid", "employeeName", "type", "startDate", "endDate",
-          "details", "status", "createdAt"
+          "correctionTarget", "requestedTime", "requestedDateTime", "details", "status", "createdAt"
         ])
         && request.resource.data.employeeUid == request.auth.uid
         && request.resource.data.employeeName
           == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name
-        && request.resource.data.type in ["correction", "leave"]
-        && request.resource.data.startDate.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
-        && request.resource.data.endDate.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+        && request.resource.data.type in ["correction", "leave", "faceDeletion"]
+        && (request.resource.data.type == "faceDeletion"
+          ? !("startDate" in request.resource.data) && !("endDate" in request.resource.data)
+          : request.resource.data.startDate.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+            && request.resource.data.endDate.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$"))
+        && (request.resource.data.type == "correction"
+          ? request.resource.data.correctionTarget in ["checkIn", "checkOut"]
+            && request.resource.data.requestedTime.matches("^([01][0-9]|2[0-3]):[0-5][0-9]$")
+            && request.resource.data.requestedDateTime is timestamp
+            && request.resource.data.requestedDateTime <= request.time
+            && hasRecordedAttendance(request.auth.uid, request.resource.data.startDate)
+          : !("correctionTarget" in request.resource.data)
+            && !("requestedTime" in request.resource.data)
+            && !("requestedDateTime" in request.resource.data))
         && request.resource.data.details is string
         && request.resource.data.details.size() > 0
         && request.resource.data.details.size() <= 400
@@ -222,6 +248,9 @@ service cloud.firestore {
         && request.resource.data.status in ["approved", "rejected"]
         && request.resource.data.reviewedBy == request.auth.uid
         && request.resource.data.reviewedAt == request.time
+        && (resource.data.type != "correction"
+          || request.resource.data.status != "approved"
+          || resource.data.requestedDateTime <= request.time)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status", "reviewedBy", "reviewedAt"
         ]);

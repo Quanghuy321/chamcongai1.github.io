@@ -152,8 +152,9 @@ I. DỮ LIỆU CÁC BẢNG TRÊN FIREBASE
   employeeMetadata. Tình trạng "Tạm ngưng" hiện chỉ dùng để quản lý/lọc, không khóa đăng nhập.
 - Ca làm lưu trong shifts. Lần đầu admin mở trang quản lý, hai ca mặc định được tạo một lần
   trong Firebase; chỉnh sửa hoặc xóa sau đó không bị khôi phục khi tải lại.
-- Nhân viên gửi yêu cầu sửa chấm công/nghỉ phép vào employeeRequests; admin duyệt hoặc từ chối
-  và trạng thái được lưu để nhân viên theo dõi.
+- Nhân viên gửi yêu cầu sửa chấm công/nghỉ phép/hủy khuôn mặt vào employeeRequests. Yêu cầu sửa công
+  chỉ được gửi khi đã có giờ vào/ra tương ứng; admin duyệt sẽ cập nhật giờ đề nghị, lưu thông tin giờ gốc
+  và người duyệt để đối soát. Admin có thể từ chối và nhân viên theo dõi trạng thái trong ứng dụng.
 - Lịch sử chấm công lưu trong attendance. Báo cáo tháng được tính từ dữ liệu chấm công.
 - Cấu hình lương lưu trong payrollSettings; bảng lương tính từ chấm công và cấu hình đã lưu.
 - Cần Publish firestore.rules lên đúng Firebase project để áp dụng quyền đọc/ghi.
